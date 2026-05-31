@@ -1,7 +1,10 @@
 # mapgen — prompt → 3D map pipeline
 
 [![CI](https://github.com/azya11/mapgen/actions/workflows/ci.yml/badge.svg)](https://github.com/azya11/mapgen/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary%20%C2%B7%20All%20rights%20reserved-red.svg)](LICENSE)
+
+> © 2026 Aziz. All rights reserved. This source is public for viewing only —
+> no use, copying, modification, or distribution is permitted without written consent.
 
 An AI pipeline that turns a natural-language prompt describing a **location, its
 surroundings, and the kind of map** you want into **3D models and files ready for
