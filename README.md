@@ -1,5 +1,8 @@
 # mapgen — prompt → 3D map pipeline
 
+[![CI](https://github.com/azya11/mapgen/actions/workflows/ci.yml/badge.svg)](https://github.com/azya11/mapgen/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 An AI pipeline that turns a natural-language prompt describing a **location, its
 surroundings, and the kind of map** you want into **3D models and files ready for
 rendering** (glTF/GLB, OBJ+MTL, STL, and a runnable Blender script).
