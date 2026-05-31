@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.claude/
+*.log
+output/
+*.glb
+*.obj
+*.mtl
+*.stl
+*_blender.py
+*_render.png
