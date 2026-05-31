@@ -17,6 +17,9 @@ prompt ─▶ [1 Parse]  Claude tool-use ─▶ validated SceneSpec (JSON)
        ─▶ [4 Export]  GLB · OBJ+MTL · STL · Blender .py
 ```
 
+It ships both as a **CLI** and as a **secure web app** with accounts and a free
+2-generation quota (see [Web app](#web-app)).
+
 It is **hybrid**: recognised real places are built from real OpenStreetMap
 building footprints and Open-Meteo elevation data; fictional or unrecognised
 places are generated procedurally from the parsed description.
@@ -121,6 +124,43 @@ terrain comes from real elevation data.
 blender --background --python output\san-francisco_blender.py
 # writes output\san-francisco_render.png
 ```
+
+## Web app
+
+A hardened FastAPI web app that lets registered users generate maps in the
+browser, with a free **2-generations-per-account** quota (no payment system).
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-web.txt
+.\.venv\Scripts\python.exe run_web.py          # http://127.0.0.1:8000
+```
+
+Open the URL, create an account, and generate from the in-browser studio with a
+live three.js viewer (sky, sun shadows, reflections) and GLB/OBJ/STL downloads.
+
+**Frontend** — aurora-glass design system (Space Grotesk / Inter / JetBrains
+Mono), animated landing page, auth screens, and a generator with a real-time 3D
+viewer and usage meter.
+
+**Security (defense in depth)**
+
+| Area | Measure |
+|------|---------|
+| Passwords | Argon2id hashing; constant-time verify with dummy hash to stop user-enumeration timing |
+| Sessions | 256-bit random tokens stored **hashed** (SHA-256); httpOnly + `SameSite=Strict` cookies; server-side expiry |
+| CSRF | Per-session token (synchronizer) required on state-changing requests + same-origin check |
+| Brute force | Per-IP sliding-window rate limits + account lockout after repeated failures |
+| Headers | Strict CSP with per-response **nonces** (no `unsafe-inline` scripts), HSTS, `frame-ancestors 'none'`, `nosniff`, Referrer-/Permissions-Policy, COOP/CORP |
+| Quota | Enforced server-side with atomic reserve/refund (no race double-spend) |
+| Injection | SQLAlchemy ORM (bound params) only; no string SQL |
+| Files | Served owner-only by random UUID; filename whitelist; path-traversal guard |
+| Abuse | Generation runs in a bounded threadpool with capped extent/resolution and a hard timeout |
+| Errors | Generic client messages; internal details never leaked |
+
+**Production notes** — run behind a TLS reverse proxy and set
+`WEB_SECRET_KEY`, `WEB_COOKIE_SECURE=1` (enables Secure cookies + HSTS), and
+`WEB_TRUST_PROXY=1`. Set `ANTHROPIC_API_KEY` to use the Claude parser. The free
+quota and limits are configurable via `WEB_*` env vars (see `web/config.py`).
 
 ## Tests
 

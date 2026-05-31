@@ -196,6 +196,8 @@ def build_scene(
         if building_mesh is not None:
             stats["buildings_source"] = "osm"
             stats["building_count"] = len(osm.buildings)
+            if osm.fetched_extent_km and osm.fetched_extent_km < spec.extent_km - 0.05:
+                stats["buildings_extent_km"] = round(osm.fetched_extent_km, 1)
     if building_mesh is None:
         building_mesh = bld.procedural(spec, hf, config.seed)
         if building_mesh is not None:

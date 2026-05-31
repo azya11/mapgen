@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Generator · mapgen</title>
+<meta name="csrf-token" content="{{ csrf }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="/"><span class="logo">🗺️</span><span class="name">mapgen</span></a>
+  <div class="right">
+    <span class="userchip">👤 <b>{{ user.email }}</b></span>
+    <span class="userchip meter" id="usage" data-remaining="{{ remaining }}" data-limit="{{ limit }}">
+      <span class="count" id="usage-count">{{ remaining }}/{{ limit }}</span>
+      <span class="bar"><span id="usage-bar"></span></span>
+    </span>
+    <button class="btn ghost" id="logout">Sign out</button>
+  </div>
+</div>
+
+<div class="app-main">
+  <aside class="controls">
+    <h2>Generate a 3D map</h2>
+    <div class="desc">Describe a place, its surroundings and the style you want.</div>
+
+    <div class="field">
+      <label for="prompt">Prompt</label>
+      <textarea id="prompt" maxlength="280" placeholder="1:1 map of Uralsk, Kazakhstan with terrain and building heights"></textarea>
+    </div>
+
+    <div class="sec-label">Source</div>
+    <label class="sw"><input type="checkbox" id="use-real" checked><span class="track"></span>Use real-world data (geocode + OSM + elevation)</label>
+
+    <div class="sec-label">Area</div>
+    <div class="field">
+      <label for="extent">Extent <span class="val" id="extent-val">4.0 km</span></label>
+      <input type="range" id="extent" min="1" max="6" step="0.5" value="4">
+    </div>
+
+    <div class="divider"></div>
+    <button class="btn primary block lg" id="generate"><span id="gen-label">Generate map</span></button>
+    <div class="err-text" id="err"></div>
+
+    <div class="result glass" id="result" hidden>
+      <div class="sec-label">Result</div>
+      <div id="stats"></div>
+      <div class="downloads" id="downloads"></div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="sec-label">My maps</div>
+    <div class="history" id="history"><div class="history-empty">No maps yet.</div></div>
+  </aside>
+
+  <section class="stage" id="stage">
+    <div class="hud glass" id="hud" hidden>— fps</div>
+    <div class="viewer-empty" id="empty">
+      <div>
+        <div class="big">🌐</div>
+        <div>Your 3D map will appear here.</div>
+        <div class="hint">Drag to orbit · scroll to zoom</div>
+      </div>
+    </div>
+    <div class="viewer-tools" id="tools" hidden>
+      <button class="btn" id="t-frame">⤢ Frame</button>
+      <button class="btn" id="t-rotate">⟳ Rotate</button>
+      <button class="btn" id="t-wire">▢ Wire</button>
+      <button class="btn" id="t-shot">📷 PNG</button>
+    </div>
+    <div class="overlay-spin" id="spin" hidden><div class="ring"></div><div class="txt" id="spin-txt">building your map…</div></div>
+  </section>
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<script type="importmap" nonce="{{ nonce }}">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script src="/static/js/app.js" type="module"></script>
+</body>
+</html>

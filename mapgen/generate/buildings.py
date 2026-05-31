@@ -23,16 +23,32 @@ def _sample_height(hf: Heightfield, x: float, y: float) -> float:
     return float(hf.z[int(round(fx)), int(round(fy))])
 
 
+# Hard cap on extruded footprints so a dense city can't blow up build time or
+# file size. We keep the largest footprints (the visually dominant ones).
+_MAX_BUILDINGS = 45000
+
+
 def from_osm(osm: OSMData, bbox: BBox, hf: Heightfield) -> trimesh.Trimesh | None:
-    meshes = []
+    polys = []
     for b in osm.buildings:
         xy = [bbox.to_local_xy(lat, lon) for lon, lat in b.ring]
         try:
             poly = Polygon(xy)
             if not poly.is_valid or poly.area < 4.0:  # skip slivers (<4 m²)
                 continue
+            polys.append((poly, b.height_m))
+        except Exception:
+            continue
+
+    if len(polys) > _MAX_BUILDINGS:
+        polys.sort(key=lambda p: p[0].area, reverse=True)
+        polys = polys[:_MAX_BUILDINGS]
+
+    meshes = []
+    for poly, height in polys:
+        try:
             base = _sample_height(hf, poly.centroid.x, poly.centroid.y)
-            mesh = trimesh.creation.extrude_polygon(poly, height=b.height_m)
+            mesh = trimesh.creation.extrude_polygon(poly, height=height)
             mesh.apply_translation([0, 0, base])
             meshes.append(mesh)
         except Exception:

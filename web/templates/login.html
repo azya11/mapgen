@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{{ 'Sign in' if mode == 'login' else 'Create account' }} · mapgen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="auth-shell">
+  <div class="auth-card glass">
+    <a class="brand" href="/"><span class="logo">🗺️</span><span class="name">mapgen</span></a>
+    <div class="sub">{{ 'Welcome back' if mode == 'login' else 'Create your free account' }}</div>
+
+    <div class="tabs">
+      <a href="/login" class="{{ 'active' if mode == 'login' else '' }}">Sign in</a>
+      <a href="/register" class="{{ 'active' if mode == 'register' else '' }}">Register</a>
+    </div>
+
+    <form id="auth-form" data-mode="{{ mode }}" novalidate>
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" required placeholder="you@example.com">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password"
+               autocomplete="{{ 'current-password' if mode == 'login' else 'new-password' }}"
+               required placeholder="••••••••••">
+        {% if mode == 'register' %}<div class="hint">At least 10 characters, with letters and numbers.</div>{% endif %}
+      </div>
+      <div class="err-text" id="err"></div>
+      <button class="btn primary block lg" type="submit" id="submit">
+        {{ 'Sign in' if mode == 'login' else 'Create account' }}
+      </button>
+    </form>
+
+    <div class="switch-line">
+      {% if mode == 'login' %}
+        New here? <a href="/register">Create an account</a>
+      {% else %}
+        Already have an account? <a href="/login">Sign in</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+<div class="toast-wrap" id="toasts"></div>
+<script src="/static/js/auth.js" type="module"></script>
+</body>
+</html>

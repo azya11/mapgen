@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>mapgen · prompt → 3D map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="topbar">
+  <div class="brand"><span class="logo">🗺️</span><span class="name">mapgen</span></div>
+  <div class="right">
+    {% if user %}
+      <span class="userchip">👤 <b>{{ user.email }}</b></span>
+      <a class="btn primary" href="/app">Open app →</a>
+    {% else %}
+      <a class="btn ghost" href="/login">Sign in</a>
+      <a class="btn primary" href="/register">Get started</a>
+    {% endif %}
+  </div>
+</div>
+
+<section class="hero">
+  <div class="badge"><span class="dot"></span> AI · real-world geodata · 3D export</div>
+  <h1>Turn a sentence into a<br><span class="grad">3D map of anywhere</span></h1>
+  <p class="lead">Describe a place — its terrain, surroundings, and style — and mapgen
+    builds a real, renderable 3D model from live OpenStreetMap buildings and
+    elevation, or generates it procedurally. Export GLB, OBJ, and STL.</p>
+  <div class="cta">
+    {% if user %}
+      <a class="btn primary lg" href="/app">Open the generator →</a>
+    {% else %}
+      <a class="btn primary lg" href="/register">Create free account</a>
+      <a class="btn ghost lg" href="/login">I already have one</a>
+    {% endif %}
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="flow">
+    <span class="step">prompt</span><span class="arrow">→</span>
+    <span class="step">parse</span><span class="arrow">→</span>
+    <span class="step">geocode · OSM · elevation</span><span class="arrow">→</span>
+    <span class="step">3D scene</span><span class="arrow">→</span>
+    <span class="step">GLB / OBJ / STL</span>
+  </div>
+
+  <div class="features">
+    <div class="feature glass"><div class="ic">🌍</div><h3>Real-world data</h3>
+      <p>Recognised places pull true building footprints with heights and real elevation. Fictional ones generate procedurally.</p></div>
+    <div class="feature glass"><div class="ic">⛰️</div><h3>Natural terrain</h3>
+      <p>Slope- and elevation-aware shading: grass, rock, snow caps, beaches and contour styling.</p></div>
+    <div class="feature glass"><div class="ic">🏙️</div><h3>Buildings & forests</h3>
+      <p>Extruded city blocks at real heights, procedural forests, and translucent water bodies.</p></div>
+    <div class="feature glass"><div class="ic">🔒</div><h3>Secure & private</h3>
+      <p>Argon2 password hashing, hardened sessions, CSRF protection, strict CSP. Your generations are yours.</p></div>
+  </div>
+</div>
+
+<footer class="site">© 2026 Aziz · mapgen — free preview, 2 generations per account</footer>
+</body>
+</html>
