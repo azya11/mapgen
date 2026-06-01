@@ -212,12 +212,15 @@ $('generate').addEventListener('click', async () => {
     if (!res.ok) {
       $('err').textContent = data.error || 'Generation failed.';
       toast(data.error || 'Generation failed.');
+    } else if (data.mode === 'worker') {
+      await runOnWorker(data);
     } else {
+      // Local in-process mode: files served same-origin.
       lastId = data.id;
       $('empty').hidden = true; $('hud').hidden = false; $('tools').hidden = false;
       $('spin-txt').textContent = 'loading model…';
       const info = await viewer.load(`/files/${data.id}/${data.files.glb}`);
-      renderResult(data, info);
+      renderResult(data, '', info);
       setUsage(data.remaining, data.limit);
       loadHistory();
       toast('Map generated · ' + data.remaining + ' left', 'ok');
@@ -231,7 +234,52 @@ $('generate').addEventListener('click', async () => {
   $('gen-label').textContent = label;
 });
 
-function renderResult(data, info) {
+// Split mode: run the heavy generation directly on the worker (avoids Vercel's
+// 60s / 4.5 MB limits), then confirm back to the app to commit/refund quota.
+async function runOnWorker(data) {
+  const base = data.worker_url.replace(/\/$/, '');
+  let wd = {};
+  let success = false;
+  try {
+    const w = await fetch(`${base}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticket: data.ticket }),
+    });
+    wd = await w.json().catch(() => ({}));
+    success = w.ok && wd && wd.id;
+  } catch (_) { /* handled below */ }
+
+  // Tell the app the outcome (commits the row, or refunds the reserved slot).
+  let conf = {};
+  try {
+    const c = await fetch('/api/generate/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
+      body: JSON.stringify({ ticket: data.ticket, ok: !!success, metadata: success ? wd : null }),
+    });
+    conf = await c.json().catch(() => ({}));
+  } catch (_) { /* non-fatal */ }
+
+  if (!success) {
+    const msg = (wd && wd.error) || 'Generation failed. Please try again.';
+    $('err').textContent = msg;
+    toast(msg);
+    if (conf.limit != null) setUsage(conf.remaining, conf.limit);
+    return;
+  }
+
+  lastId = wd.id;
+  $('empty').hidden = true; $('hud').hidden = false; $('tools').hidden = false;
+  $('spin-txt').textContent = 'loading model…';
+  const info = await viewer.load(`${base}/files/${wd.id}/${wd.files.glb}`);
+  renderResult(wd, base, info);
+  if (conf.limit != null) setUsage(conf.remaining, conf.limit);
+  loadHistory();
+  toast('Map generated · ' + (conf.remaining != null ? conf.remaining : '?') + ' left', 'ok');
+}
+
+function renderResult(data, base, info) {
   const s = data.stats || {};
   const rows = [
     ['Location', esc(data.location) + (data.used_real_data ? ' · real' : ' · procedural')],
@@ -251,17 +299,20 @@ function renderResult(data, info) {
     `<div class="stat"><span>${k}</span><b>${v}</b></div>`).join('');
 
   const dl = Object.entries(data.files).map(([fmt, name]) =>
-    `<a class="btn" href="/files/${data.id}/${name}" download>${fmt.toUpperCase()}</a>`).join('');
+    `<a class="btn" href="${base}/files/${data.id}/${name}" download>${fmt.toUpperCase()}</a>`).join('');
   $('downloads').innerHTML = dl;
   $('result').hidden = false;
 }
 
 /* ----------------------------------------------------------- My maps --- */
+let historyBase = '';
+
 async function loadHistory() {
   try {
     const res = await fetch('/api/history');
     if (!res.ok) return;
-    const { items = [] } = await res.json();
+    const { items = [], base = '' } = await res.json();
+    historyBase = base;
     const el = $('history');
     if (!items.length) { el.innerHTML = '<div class="history-empty">No maps yet.</div>'; return; }
     el.innerHTML = '';
@@ -293,7 +344,7 @@ async function openSaved(it) {
       ['Triangles', info.tris.toLocaleString()],
     ].map(([k, v]) => `<div class="stat"><span>${k}</span><b>${v}</b></div>`).join('');
     $('downloads').innerHTML = ['glb', 'obj', 'stl'].map((f) =>
-      `<a class="btn" href="/files/${it.id}/scene.${f}" download>${f.toUpperCase()}</a>`).join('');
+      `<a class="btn" href="${historyBase}/files/${it.id}/scene.${f}" download>${f.toUpperCase()}</a>`).join('');
     $('result').hidden = false;
   } catch (_) {
     toast('Could not load that map.');

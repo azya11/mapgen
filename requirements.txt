@@ -1,9 +1,18 @@
-numpy>=1.26
-trimesh>=4.4
-shapely>=2.0
-mapbox-earcut>=1.0
-scipy>=1.11
-networkx>=3.0
-requests>=2.31
+# Web app + Vercel function dependencies (LIGHT — kept under Vercel's 250 MB
+# function bundle limit; no numpy/scipy/trimesh here).
+#
+# The heavy 3D-pipeline dependencies live in requirements-mapgen.txt and are
+# installed by the CLI, the generation worker, and full local development:
+#
+#   Web only (e.g. Vercel):     pip install -r requirements.txt
+#   CLI / worker / full local:  pip install -r requirements.txt -r requirements-mapgen.txt
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlalchemy>=2.0
+argon2-cffi>=23.1
+itsdangerous>=2.2
+email-validator>=2.1
+jinja2>=3.1
+python-multipart>=0.0.9
 pydantic>=2.7
-anthropic>=0.40
+psycopg[binary]>=3.2      # Postgres driver (Neon/Supabase) for serverless

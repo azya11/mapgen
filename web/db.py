@@ -17,6 +17,7 @@ from sqlalchemy import (
     String,
     create_engine,
 )
+from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -72,15 +73,24 @@ class Generation(Base):
     prompt: Mapped[str] = mapped_column(String(512))
     location: Mapped[str] = mapped_column(String(256), default="")
     used_real: Mapped[bool] = mapped_column(Boolean, default=False)
+    # A row is created (pending=True) when quota is reserved, then committed
+    # (pending=False) once the worker confirms success. Pending rows are hidden
+    # from history and are deleted + refunded on failure. In local in-process
+    # mode rows are inserted already-committed (pending=False).
+    pending: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
 
-# SQLite needs check_same_thread off for the threadpool; pool keeps it serialized.
+_is_sqlite = settings.DB_URL.startswith("sqlite")
+# SQLite: check_same_thread off for the threadpool. Postgres on serverless
+# (Vercel): NullPool so we never hold a connection across cold invocations.
 _engine = create_engine(
     settings.DB_URL,
     echo=False,
     future=True,
-    connect_args={"check_same_thread": False} if settings.DB_URL.startswith("sqlite") else {},
+    connect_args={"check_same_thread": False} if _is_sqlite else {},
+    poolclass=None if _is_sqlite else NullPool,
+    pool_pre_ping=not _is_sqlite,
 )
 SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False, future=True)
 

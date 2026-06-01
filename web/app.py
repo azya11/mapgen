@@ -6,6 +6,7 @@ from __future__ import annotations
 import datetime as dt
 import os
 import re
+import uuid
 
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
@@ -17,6 +18,7 @@ from sqlalchemy import select
 from .config import HERE, OUTPUTS_DIR, settings
 from .db import Generation, Session as DbSession, SessionLocal, User, init_db, utcnow
 from .generate import run_generation
+from .tickets import issue_ticket, read_ticket
 from .security import (
     SecurityHeadersMiddleware,
     clean_prompt,
@@ -257,16 +259,18 @@ def _register_routes(app: FastAPI) -> None:
         if not user:
             return _err(401, "Not authenticated.")
         rows = db.scalars(
-            select(Generation).where(Generation.user_id == user.id)
-            .order_by(Generation.created_at.desc()).limit(60)
+            select(Generation).where(
+                Generation.user_id == user.id, Generation.pending == False  # noqa: E712
+            ).order_by(Generation.created_at.desc()).limit(60)
         ).all()
-        return {"items": [{
+        base = settings.WORKER_URL or ""  # files live on the worker in split mode
+        return {"base": base, "items": [{
             "id": g.id,
             "prompt": g.prompt,
             "location": g.location,
             "used_real": g.used_real,
             "created_at": g.created_at.replace(tzinfo=dt.timezone.utc).isoformat(),
-            "glb": f"/files/{g.id}/scene.glb",
+            "glb": f"{base}/files/{g.id}/scene.glb",
         } for g in rows]}
 
     # ---- generation ----
@@ -293,9 +297,34 @@ def _register_routes(app: FastAPI) -> None:
         fresh = db.get(User, user.id)
         if fresh.generations_used >= settings.FREE_GENERATIONS:
             return _err(402, "You have used all your free generations.")
+        gen_id = uuid.uuid4().hex
         fresh.generations_used += 1
         db.commit()
 
+        # ---- split mode: hand the browser a signed ticket for the worker ----
+        if settings.WORKER_URL:
+            # Record a pending row so the slot is tracked; /confirm commits or
+            # /confirm(ok=false) deletes it and refunds.
+            db.add(Generation(
+                id=gen_id, user_id=user.id, prompt=prompt, pending=True,
+            ))
+            db.commit()
+            ticket = issue_ticket({
+                "uid": user.id, "gid": gen_id, "prompt": prompt,
+                "use_real": body.use_real, "extent_km": body.extent_km,
+            })
+            fresh = db.get(User, user.id)
+            return JSONResponse({
+                "mode": "worker",
+                "id": gen_id,
+                "ticket": ticket,
+                "worker_url": settings.WORKER_URL,
+                "remaining": max(0, settings.FREE_GENERATIONS - fresh.generations_used),
+                "used": fresh.generations_used,
+                "limit": settings.FREE_GENERATIONS,
+            })
+
+        # ---- local mode: run the pipeline in-process ----
         try:
             result = await run_generation(prompt, body.use_real, body.extent_km)
         except Exception as e:
@@ -309,15 +338,58 @@ def _register_routes(app: FastAPI) -> None:
         db.add(Generation(
             id=result["id"], user_id=user.id, prompt=prompt,
             location=str(result.get("location", ""))[:256],
-            used_real=bool(result.get("used_real_data")),
+            used_real=bool(result.get("used_real_data")), pending=False,
         ))
         db.commit()
 
         fresh = db.get(User, user.id)
+        result["mode"] = "local"
         result["remaining"] = max(0, settings.FREE_GENERATIONS - fresh.generations_used)
         result["used"] = fresh.generations_used
         result["limit"] = settings.FREE_GENERATIONS
         return JSONResponse(result)
+
+    @app.post("/api/generate/confirm")
+    async def api_generate_confirm(request: Request, db=Depends(get_db)):
+        """Worker-mode callback from the browser: commit the pending generation
+        on success, or delete it and refund the reserved quota on failure."""
+        sess, user = _current(request, db)
+        if not user:
+            return _err(401, "Not authenticated.")
+        if not _same_origin(request):
+            return _err(403, "Cross-origin request blocked.")
+        if not _csrf_ok(request, sess):
+            return _err(403, "Invalid CSRF token.")
+
+        data = await _json(request)
+        payload = read_ticket(data.get("ticket", ""), max_age=settings.WORKER_TIMEOUT_S + 600)
+        if not payload or payload.get("uid") != user.id:
+            return _err(400, "Invalid or expired ticket.")
+        gen_id = str(payload.get("gid", ""))
+        gen = db.get(Generation, gen_id)
+        if not gen or gen.user_id != user.id:
+            return _err(404, "Not found.")
+
+        ok = bool(data.get("ok"))
+        if gen.pending:  # idempotent: only act on a still-pending reservation
+            if ok:
+                meta = data.get("metadata") or {}
+                gen.location = str(meta.get("location", ""))[:256]
+                gen.used_real = bool(meta.get("used_real_data"))
+                gen.pending = False
+            else:
+                db.delete(gen)
+                fresh = db.get(User, user.id)
+                fresh.generations_used = max(0, fresh.generations_used - 1)
+            db.commit()
+
+        fresh = db.get(User, user.id)
+        return JSONResponse({
+            "ok": ok,
+            "remaining": max(0, settings.FREE_GENERATIONS - fresh.generations_used),
+            "used": fresh.generations_used,
+            "limit": settings.FREE_GENERATIONS,
+        })
 
     # ---- secure file serving (owner-only, no path traversal) ----
     @app.get("/files/{gen_id}/{name}")

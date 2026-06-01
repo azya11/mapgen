@@ -1,6 +1,13 @@
-"""Runs the mapgen pipeline for the web, with resource bounds so a request can't
-exhaust the server: capped extent/resolution, a hard timeout, and a global
-concurrency semaphore. Output goes to a per-generation UUID directory."""
+"""Runs the mapgen pipeline IN-PROCESS for local single-host mode, with resource
+bounds so a request can't exhaust the server: capped extent/resolution, a hard
+timeout, and a global concurrency semaphore. Output goes to a per-generation
+UUID directory.
+
+In the split (Vercel) topology this module is never invoked — generation runs
+on the separate worker (see worker/app.py). The heavy ``mapgen`` import is kept
+lazy (inside the worker thread) so importing the web app on Vercel does not pull
+numpy/scipy/trimesh into the serverless bundle.
+"""
 
 from __future__ import annotations
 
@@ -8,15 +15,14 @@ import asyncio
 import uuid
 from pathlib import Path
 
-from mapgen import Pipeline
-from mapgen.config import Config
-
 from .config import OUTPUTS_DIR, settings
 
 _semaphore = asyncio.Semaphore(settings.GEN_CONCURRENCY)
 
 
-def _build_config(use_network: bool) -> Config:
+def _build_config(use_network: bool):
+    from mapgen.config import Config  # lazy: heavy import only when generating locally
+
     cfg = Config.from_env()
     cfg.terrain_resolution = settings.GEN_RESOLUTION
     cfg.use_network = use_network
@@ -26,6 +32,8 @@ def _build_config(use_network: bool) -> Config:
 
 
 def _run_sync(prompt: str, gen_id: str, use_real: bool, extent_km: float) -> dict:
+    from mapgen import Pipeline  # lazy: heavy import only when generating locally
+
     cfg = _build_config(use_network=use_real)
     pipe = Pipeline(config=cfg)
     overrides = {

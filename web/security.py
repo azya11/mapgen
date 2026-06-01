@@ -147,6 +147,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         request.state.csp_nonce = nonce
         response = await call_next(request)
 
+        # In split mode the browser fetches generation + GLB files directly from
+        # the worker origin, so it must be allowed in connect-src.
+        worker = settings.WORKER_URL or ""
         csp = (
             "default-src 'none'; "
             "base-uri 'none'; "
@@ -156,7 +159,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             f"style-src 'self' 'nonce-{nonce}' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com; "
             f"script-src 'self' 'nonce-{nonce}' https://unpkg.com; "
-            "connect-src 'self' https://unpkg.com; "
+            f"connect-src 'self' https://unpkg.com {worker}".rstrip() + "; "
             "worker-src 'self' blob:; "
             "object-src 'none'; "
             "manifest-src 'self'"

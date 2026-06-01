@@ -28,8 +28,15 @@ places are generated procedurally from the parsed description.
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+# CLI / full local app needs the heavy 3D pipeline deps too:
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-mapgen.txt
 ```
+
+> Dependencies are split: `requirements.txt` is the light web/API set (kept
+> small enough for serverless), and `requirements-mapgen.txt` is the heavy 3D
+> pipeline (numpy/scipy/trimesh/shapely) used by the CLI and the generation
+> worker. See [DEPLOY.md](DEPLOY.md) to host the web app **free** on Vercel +
+> a free worker.
 
 Set an Anthropic API key to enable the high-quality Claude parser (optional —
 the pipeline runs fully offline with a rule-based fallback):
@@ -131,9 +138,12 @@ A hardened FastAPI web app that lets registered users generate maps in the
 browser, with a free **2-generations-per-account** quota (no payment system).
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-web.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-mapgen.txt
 .\.venv\Scripts\python.exe run_web.py          # http://127.0.0.1:8000
 ```
+
+To **host it for free**, the app can split into a Vercel frontend (free) + a
+free always-on generation worker — see [DEPLOY.md](DEPLOY.md).
 
 Open the URL, create an account, and generate from the in-browser studio with a
 live three.js viewer (sky, sun shadows, reflections) and GLB/OBJ/STL downloads.

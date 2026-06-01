@@ -1,0 +1,15 @@
+# Keep the Vercel function bundle small and under the 250 MB limit.
+# The heavy pipeline + worker are deployed separately (see worker/).
+# NOTE: web/static/** is intentionally kept (landing-page model + assets).
+.venv/
+.git/
+.github/
+.claude/
+mapgen/
+worker/
+tests/
+examples/
+output/
+viewer.html
+server.log
+requirements-mapgen.txt
