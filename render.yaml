@@ -1,0 +1,32 @@
+# Render blueprint for the mapgen web app.
+# Deploy: Render Dashboard -> New -> Blueprint -> connect this repo -> Apply.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: mapgen
+    runtime: python
+    plan: starter                # needed for the persistent disk below
+    region: oregon               # pick the region closest to you
+    buildCommand: pip install -r requirements.txt -r requirements-web.txt
+    startCommand: python run_web.py
+    healthCheckPath: /
+    autoDeploy: true
+    disk:
+      name: mapgen-data
+      mountPath: /var/data       # persistent: SQLite DB, signing secret, outputs
+      sizeGB: 5
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      - key: HOST                # run_web.py defaults to 127.0.0.1; Render needs 0.0.0.0
+        value: 0.0.0.0
+      - key: WEB_DATA_DIR        # DB + .secret + outputs live on the mounted disk
+        value: /var/data
+      - key: WEB_COOKIE_SECURE   # Render terminates TLS -> Secure cookies + HSTS
+        value: "1"
+      - key: WEB_TRUST_PROXY     # honour X-Forwarded-For from Render's proxy
+        value: "1"
+      - key: WEB_SECRET_KEY      # stable session-signing key (do NOT let it rotate)
+        generateValue: true
+      - key: ANTHROPIC_API_KEY   # optional; offline rule parser is used if unset
+        sync: false              # set the real value in the dashboard (kept secret)
