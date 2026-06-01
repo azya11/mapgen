@@ -12,9 +12,9 @@
 </head>
 <body>
 <div class="topbar">
-  <a class="brand" href="/"><span class="logo">🗺️</span><span class="name">mapgen</span></a>
+  <a class="brand" href="/"><span class="logo"><img class="emoji" src="/static/emoji/1f5fa.png" alt="🗺️"></span><span class="name">mapgen</span></a>
   <div class="right">
-    <span class="userchip">👤 <b>{{ user.email }}</b></span>
+    <span class="userchip"><img class="emoji" src="/static/emoji/1f464.png" alt="👤"> <b>{{ user.email }}</b></span>
     <span class="userchip meter" id="usage" data-remaining="{{ remaining }}" data-limit="{{ limit }}">
       <span class="count" id="usage-count">{{ remaining }}/{{ limit }}</span>
       <span class="bar"><span id="usage-bar"></span></span>
@@ -61,7 +61,7 @@
     <div class="hud glass" id="hud" hidden>— fps</div>
     <div class="viewer-empty" id="empty">
       <div>
-        <div class="big">🌐</div>
+        <div class="big"><img class="emoji" src="/static/emoji/1f310.png" alt="🌐"></div>
         <div>Your 3D map will appear here.</div>
         <div class="hint">Drag to orbit · scroll to zoom</div>
       </div>
@@ -70,7 +70,7 @@
       <button class="btn" id="t-frame">⤢ Frame</button>
       <button class="btn" id="t-rotate">⟳ Rotate</button>
       <button class="btn" id="t-wire">▢ Wire</button>
-      <button class="btn" id="t-shot">📷 PNG</button>
+      <button class="btn" id="t-shot"><img class="emoji" src="/static/emoji/1f4f7.png" alt="📷"> PNG</button>
     </div>
     <div class="overlay-spin" id="spin" hidden><div class="ring"></div><div class="txt" id="spin-txt">building your map…</div></div>
   </section>

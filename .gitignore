@@ -12,3 +12,7 @@ output/
 *_blender.py
 *_render.png
 web/data/
+
+# ...except static landing-page assets (the rotating San Francisco map)
+!web/static/models/
+!web/static/models/*.glb

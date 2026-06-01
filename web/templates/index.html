@@ -10,11 +10,15 @@
 <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
+<canvas id="bg3d" aria-hidden="true"></canvas>
+<div id="bg3d-veil" aria-hidden="true"></div>
+<div id="bg3d-mode" aria-hidden="true">satellite</div>
+
 <div class="topbar">
-  <div class="brand"><span class="logo">🗺️</span><span class="name">mapgen</span></div>
+  <div class="brand"><span class="logo"><img class="emoji" src="/static/emoji/1f5fa.png" alt="🗺️"></span><span class="name">mapgen</span></div>
   <div class="right">
     {% if user %}
-      <span class="userchip">👤 <b>{{ user.email }}</b></span>
+      <span class="userchip"><img class="emoji" src="/static/emoji/1f464.png" alt="👤"> <b>{{ user.email }}</b></span>
       <a class="btn primary" href="/app">Open app →</a>
     {% else %}
       <a class="btn ghost" href="/login">Sign in</a>
@@ -48,18 +52,47 @@
     <span class="step">GLB / OBJ / STL</span>
   </div>
 
+  <div class="features-head">
+    <span class="eyebrow">Capabilities</span>
+    <h2>Everything the pipeline can build</h2>
+  </div>
+
   <div class="features">
-    <div class="feature glass"><div class="ic">🌍</div><h3>Real-world data</h3>
-      <p>Recognised places pull true building footprints with heights and real elevation. Fictional ones generate procedurally.</p></div>
-    <div class="feature glass"><div class="ic">⛰️</div><h3>Natural terrain</h3>
-      <p>Slope- and elevation-aware shading: grass, rock, snow caps, beaches and contour styling.</p></div>
-    <div class="feature glass"><div class="ic">🏙️</div><h3>Buildings & forests</h3>
-      <p>Extruded city blocks at real heights, procedural forests, and translucent water bodies.</p></div>
-    <div class="feature glass"><div class="ic">🔒</div><h3>Secure & private</h3>
-      <p>Argon2 password hashing, hardened sessions, CSRF protection, strict CSP. Your generations are yours.</p></div>
+    <article class="feature">
+      <div class="f-top"><span class="ic"><img class="emoji" src="/static/emoji/1f30d.png" alt="🌍"></span><span class="num">01</span></div>
+      <h3>Real-world data</h3>
+      <p>Recognised places pull true OpenStreetMap building footprints — with real
+        heights and elevation. Fictional places generate procedurally.</p>
+    </article>
+    <article class="feature">
+      <div class="f-top"><span class="ic"><img class="emoji" src="/static/emoji/26f0.png" alt="⛰️"></span><span class="num">02</span></div>
+      <h3>Natural terrain</h3>
+      <p>Slope- and elevation-aware shading: grass, rock, snow caps, beaches and
+        contour styling that follow the real landscape.</p>
+    </article>
+    <article class="feature">
+      <div class="f-top"><span class="ic"><img class="emoji" src="/static/emoji/1f3d9.png" alt="🏙️"></span><span class="num">03</span></div>
+      <h3>Buildings &amp; forests</h3>
+      <p>City blocks extruded to real heights, procedural forests, and translucent
+        water bodies — all in one scene.</p>
+    </article>
+    <article class="feature">
+      <div class="f-top"><span class="ic"><img class="emoji" src="/static/emoji/1f512.png" alt="🔒"></span><span class="num">04</span></div>
+      <h3>Secure &amp; private</h3>
+      <p>Argon2 password hashing, hardened sessions, CSRF protection, and a strict
+        CSP. Your generations stay yours.</p>
+    </article>
   </div>
 </div>
 
 <footer class="site">© 2026 Aziz · mapgen — free preview, 2 generations per account</footer>
+
+<script type="importmap" nonce="{{ nonce }}">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module" src="/static/js/bg.js" nonce="{{ nonce }}"></script>
 </body>
 </html>

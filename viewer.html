@@ -30,6 +30,7 @@
       radial-gradient(900px 600px at 8% 108%, rgba(176,108,255,.14), transparent 55%),
       linear-gradient(180deg, var(--bg0), var(--bg1)); }
   canvas { display:block; }
+  img.emoji { height:1em; width:1em; display:inline-block; vertical-align:-.15em; object-fit:contain; }
 
   /* ---------- glass panels ---------- */
   .glass { position:relative; background:var(--panel);
@@ -129,7 +130,7 @@
 </head>
 <body>
 <div id="ui" class="glass">
-  <div class="brand"><span class="logo">🗺️</span><h1>mapgen</h1></div>
+  <div class="brand"><span class="logo"><img class="emoji" src="web/static/emoji/1f5fa.png" alt="🗺️"></span><h1>mapgen</h1></div>
   <div class="tagline">prompt → 3D map · live viewer</div>
 
   <div class="row">
@@ -168,7 +169,7 @@
   </div>
 
   <div class="div"></div>
-  <button id="shot" class="primary">📷 Save screenshot</button>
+  <button id="shot" class="primary"><img class="emoji" src="web/static/emoji/1f4f7.png" alt="📷"> Save screenshot</button>
   <div class="row" id="meta"></div>
 </div>
 
@@ -350,7 +351,7 @@ function load(name) {
       `<b>${name}</b>\n` +
       `extent ≈ ${(Math.max(size.x,size.z)/1000).toFixed(2)} km   ·   relief ≈ ${size.y.toFixed(0)} m\n` +
       `${Math.round(tris).toLocaleString()} triangles\n` +
-      `${meshes.buildings.length? '🏙 buildings  ':''}${meshes.vegetation.length?'🌲 forest  ':''}${meshes.water.length?'💧 water':''}`;
+      `${meshes.buildings.length? '<img class="emoji" src="web/static/emoji/1f3d9.png" alt="🏙"> buildings  ':''}${meshes.vegetation.length?'<img class="emoji" src="web/static/emoji/1f332.png" alt="🌲"> forest  ':''}${meshes.water.length?'<img class="emoji" src="web/static/emoji/1f4a7.png" alt="💧"> water':''}`;
     spin.style.display = 'none';
   }, undefined, e => {
     meta.innerHTML = `<span id="err">Failed to load ${name}.</span>`;
