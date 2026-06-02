@@ -333,9 +333,14 @@ function styleMaterials() {
     m.envMapIntensity = 0.5;
     o.castShadow = true; o.receiveShadow = true;
     // The GLB ships without vertex normals, so GLTFLoader turns on flatShading;
-    // a mesh in that state can't receive shadows. Give it real normals and use
-    // smooth shading so the terrain ("floor") actually shows building shadows.
-    if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+    // a mesh in that state isn't lit/shadowed correctly. Give every mesh real
+    // normals. Buildings are de-indexed first so each face keeps its own normal
+    // (crisp edges, not smoothed blobs); the terrain stays indexed so its hills
+    // shade smoothly and show the building shadows on the "floor".
+    if (!o.geometry.attributes.normal) {
+      if (kind === 'buildings' && o.geometry.index) o.geometry = o.geometry.toNonIndexed();
+      o.geometry.computeVertexNormals();
+    }
     m.flatShading = false;
     if (kind === 'water') {
       m.roughness = 0.06; m.metalness = 0.15;

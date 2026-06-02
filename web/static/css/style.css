@@ -253,8 +253,38 @@ footer.site { font-family:var(--font-mono); text-transform:uppercase; letter-spa
   border-top-color:var(--accent); animation:spin .8s linear infinite; vertical-align:-3px; }
 .overlay-spin { position:absolute; inset:0; display:grid; place-items:center; background:rgba(8,8,10,.62); z-index:6; }
 .overlay-spin .ring { width:50px; height:50px; border:4px solid rgba(255,255,255,.1); border-top-color:var(--accent); border-radius:50%; animation:spin .9s linear infinite; }
-.overlay-spin .txt { position:absolute; margin-top:88px; color:var(--muted); font-family:var(--font-mono); font-size:12px; text-transform:uppercase; letter-spacing:.1em; }
+.overlay-spin .txt { position:absolute; margin-top:108px; color:var(--muted); font-family:var(--font-mono); font-size:12px; text-transform:uppercase; letter-spacing:.1em; }
 @keyframes spin { to { transform:rotate(360deg); } }
+
+/* ---------- voxel ("Minecraft") loader ----------
+   Pure-CSS, GPU-composited animation: the cube fills bottom-to-top with little
+   blocks. Runs on the compositor so it keeps moving even while the main thread
+   is busy parsing the generated model (no "page unresponsive"). Green while the
+   map is generating, blue while it loads — toggled via .gen / .load on #spin. */
+.vox-scene { width:160px; height:160px; display:grid; place-items:center;
+  perspective:600px; margin-top:-26px; }
+.vox-cube { transform-style:preserve-3d; transform:rotateX(-28deg) rotateY(-45deg);
+  animation:vox-spin 9s linear infinite; }
+@keyframes vox-spin { to { transform:rotateX(-28deg) rotateY(-405deg); } }
+/* phase colours (face shades: top / left-front / right) */
+.overlay-spin.gen  { --vx-t:#7dd957; --vx-l:#54b531; --vx-r:#3c8a22; }
+.overlay-spin.load { --vx-t:#5aa9ff; --vx-l:#3d82e6; --vx-r:#285fb0; }
+.vox { position:absolute; transform-style:preserve-3d; }
+.vox .f { position:absolute; left:0; top:0; width:var(--s); height:var(--s);
+  margin-left:calc(var(--s) / -2); margin-top:calc(var(--s) / -2);
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.18); }
+.vox .t { background:var(--vx-t); transform:rotateX(90deg)  translateZ(var(--hs)); }
+.vox .l { background:var(--vx-l); transform:rotateY(0deg)   translateZ(var(--hs)); }
+.vox .r { background:var(--vx-r); transform:rotateY(90deg)  translateZ(var(--hs)); }
+/* each block pops in, holds, then the whole stack resets — a looping fill.
+   per-block delay (set inline from JS by layer) staggers the rise upward. */
+.vox { animation:vox-pop var(--cyc,2.6s) cubic-bezier(.5,1.5,.5,1) infinite both;
+  animation-delay:var(--d,0s); }
+@keyframes vox-pop {
+  0%        { opacity:0; transform:translate3d(var(--x),calc(var(--y) + 14px),var(--z)) scale(.2); }
+  14%, 80%  { opacity:1; transform:translate3d(var(--x),var(--y),var(--z)) scale(1); }
+  100%      { opacity:0; transform:translate3d(var(--x),var(--y),var(--z)) scale(1); }
+}
 
 /* ---------- history ("My maps") ---------- */
 .history { display:flex; flex-direction:column; gap:7px; }

@@ -408,9 +408,14 @@ class Viewer {
       const kind = classifyMesh(o.name || (o.parent && o.parent.name) || '');
       const m = o.material; m.vertexColors = true; o.castShadow = true; o.receiveShadow = true;
       // The GLB ships without vertex normals, so GLTFLoader turns on flatShading;
-      // a mesh in that state can't receive shadows. Give it real normals and use
-      // smooth shading so the terrain ("floor") actually shows building shadows.
-      if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+      // a mesh in that state isn't lit/shadowed correctly. Give every mesh real
+      // normals. Buildings are de-indexed first so each face keeps its own normal
+      // (crisp edges, not smoothed blobs); the terrain stays indexed so its hills
+      // shade smoothly and show the building shadows on the "floor".
+      if (!o.geometry.attributes.normal) {
+        if (kind === 'buildings' && o.geometry.index) o.geometry = o.geometry.toNonIndexed();
+        o.geometry.computeVertexNormals();
+      }
       m.flatShading = false;
       if (kind === 'water') {
         m.roughness = 0.06; m.metalness = 0.15; m.transparent = true; m.opacity = 0.72;
@@ -604,6 +609,38 @@ function syncSun(meta) {
 
 let lastId = null;
 
+/* ---- voxel loading overlay: green while generating, blue while loading ----
+   The cube DOM is built once; all motion is CSS (compositor) so it keeps
+   animating even while the main thread parses the model. */
+function buildVoxLoader() {
+  const cube = $('vox-cube');
+  if (!cube || cube.childElementCount) return;
+  const S = 22, CX = 3, CZ = 3, CY = 4;          // grid: 3×3 footprint, 4 tall
+  cube.style.setProperty('--s', S + 'px');
+  cube.style.setProperty('--hs', (S / 2) + 'px');
+  for (let L = 0; L < CY; L++)                    // layers, bottom (0) first
+    for (let i = 0; i < CX; i++)
+      for (let k = 0; k < CZ; k++) {
+        const v = document.createElement('div');
+        v.className = 'vox';
+        v.style.setProperty('--x', ((i - (CX - 1) / 2) * S) + 'px');
+        v.style.setProperty('--y', (((CY - 1) / 2 - L) * S) + 'px');
+        v.style.setProperty('--z', ((k - (CZ - 1) / 2) * S) + 'px');
+        v.style.setProperty('--d', (L * 0.16) + 's');   // stagger the rise upward
+        v.innerHTML = '<div class="f t"></div><div class="f l"></div><div class="f r"></div>';
+        cube.appendChild(v);
+      }
+}
+function showSpin(phase, text) {
+  const s = $('spin');
+  s.classList.toggle('gen', phase === 'gen');
+  s.classList.toggle('load', phase === 'load');
+  if (text != null) $('spin-txt').textContent = text;
+  s.hidden = false;
+}
+function hideSpin() { $('spin').hidden = true; }
+buildVoxLoader();
+
 $('generate').addEventListener('click', async () => {
   const prompt = $('prompt').value.trim();
   $('err').textContent = '';
@@ -613,8 +650,7 @@ $('generate').addEventListener('click', async () => {
   btn.disabled = true;
   const label = $('gen-label').textContent;
   $('gen-label').innerHTML = '<span class="spinner"></span> Generating…';
-  $('spin').hidden = false;
-  $('spin-txt').textContent = $('use-real').checked ? 'fetching real-world data…' : 'building terrain…';
+  showSpin('gen', $('use-real').checked ? 'fetching real-world data…' : 'building terrain…');
 
   try {
     const res = await fetch('/api/generate', {
@@ -636,7 +672,7 @@ $('generate').addEventListener('click', async () => {
       // Local in-process mode: files served same-origin.
       lastId = data.id;
       $('empty').hidden = true; $('hud').hidden = false; $('tools').hidden = false;
-      $('spin-txt').textContent = 'loading model…';
+      showSpin('load', 'loading model…');
       const info = await viewer.load(`/files/${data.id}/${data.files.glb}`);
       syncSun(data);
       renderResult(data, '', info);
@@ -648,7 +684,7 @@ $('generate').addEventListener('click', async () => {
     $('err').textContent = 'Network error. Please try again.';
     toast('Network error.');
   }
-  $('spin').hidden = true;
+  hideSpin();
   btn.disabled = false;
   $('gen-label').textContent = label;
 });
@@ -690,7 +726,7 @@ async function runOnWorker(data) {
 
   lastId = wd.id;
   $('empty').hidden = true; $('hud').hidden = false; $('tools').hidden = false;
-  $('spin-txt').textContent = 'loading model…';
+  showSpin('load', 'loading model…');
   const info = await viewer.load(`${base}/files/${wd.id}/${wd.files.glb}`);
   syncSun(wd);
   renderResult(wd, base, info);
