@@ -64,11 +64,14 @@ def fetch_osm(bbox: BBox, config: Config) -> OSMData | None:
         return None
 
     requested = bbox.extent_km
-    # Attempt sizes: requested (capped) then a small core that reliably succeeds.
+    # Try the full requested area first so buildings fill the whole plain, then
+    # step down gracefully (≈75% each time) if the free mirrors choke on a big/
+    # dense query, ending at a small core that reliably succeeds.
+    top = min(requested, config.osm_max_extent_km)
     sizes: list[float] = []
-    for s in (min(requested, config.osm_max_extent_km), 2.0):
+    for s in (top, top * 0.75, top * 0.5, 2.0):
         s = round(min(s, requested), 2)
-        if s >= 0.3 and s not in sizes:
+        if s >= 0.5 and s not in sizes:
             sizes.append(s)
 
     for ext in sizes:

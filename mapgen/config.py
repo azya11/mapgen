@@ -26,7 +26,7 @@ class Config:
     user_agent: str = "mapgen/0.1 (3D map generator; https://github.com/azya11/mapgen)"
     request_timeout: int = 30
     overpass_timeout: int = 75          # Overpass is slow for dense cities
-    osm_max_extent_km: float = 3.5      # cap the building query; shrinks on failure
+    osm_max_extent_km: float = 6.0      # cap the building query; shrinks on failure
     use_network: bool = True            # set False to force procedural
 
     # --- geometry ---
