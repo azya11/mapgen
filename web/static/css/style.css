@@ -227,6 +227,19 @@ footer.site { font-family:var(--font-mono); text-transform:uppercase; letter-spa
   border-radius:var(--r); padding:6px 8px; font-family:var(--font-mono); font-size:12px; color-scheme:dark; }
 .sun-info { font-family:var(--font-mono); font-size:11.5px; color:var(--accent); min-height:14px; }
 
+/* measuring */
+.measure-panel { position:absolute; top:44px; right:14px; z-index:6; width:212px; padding:14px;
+  display:flex; flex-direction:column; gap:9px; }
+.measure-readout { font-family:var(--font-mono); font-size:12px; color:#cfccc3; display:flex; flex-direction:column; gap:4px; }
+.measure-readout .m-row { display:flex; justify-content:space-between; gap:10px; }
+.measure-readout .m-row b { color:var(--accent); }
+.measure-readout .m-row.total { border-top:1px solid var(--line); padding-top:5px; margin-top:2px; }
+.measure-panel .btn.sm { padding:5px 11px; font-size:11px; font-family:var(--font-mono); align-self:flex-start; }
+.measure-labels { position:absolute; inset:0; z-index:5; pointer-events:none; overflow:hidden; }
+.measure-label { position:absolute; transform:translate(-50%,-130%); background:var(--raised);
+  border:1px solid var(--line-hi); color:var(--accent); font-family:var(--font-mono); font-size:10.5px;
+  padding:1px 6px; border-radius:3px; white-space:nowrap; }
+
 /* ---------- toast ---------- */
 .toast-wrap { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); z-index:100; display:flex; flex-direction:column; gap:8px; align-items:center; }
 .toast { padding:11px 18px; border-radius:var(--r); font-size:13px; color:var(--txt); animation:rise .22s ease;

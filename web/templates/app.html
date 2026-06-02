@@ -77,6 +77,13 @@
         <div class="hint">Real maps use their own latitude/longitude; procedural maps use the slider (timezone estimated from longitude).</div>
       </div>
     </div>
+    <div class="measure-panel glass" id="measure-panel" hidden>
+      <div class="sec-label">Measure</div>
+      <div class="measure-readout" id="measure-readout">Click two points on the map to measure.</div>
+      <button class="btn sm" id="measure-clear">Clear</button>
+      <div class="hint">Real-world distances (terrain is metric). Drag still orbits; a single click drops a point.</div>
+    </div>
+    <div class="measure-labels" id="measure-labels"></div>
     <div class="viewer-empty" id="empty">
       <div>
         <div class="big"><img class="emoji" src="/static/emoji/1f310.png" alt="🌐"></div>
@@ -89,6 +96,7 @@
       <button class="btn" id="t-rotate">⟳ Rotate</button>
       <button class="btn" id="t-theme">◑ <span id="theme-name">satellite</span></button>
       <button class="btn" id="t-sun">☀ Sun</button>
+      <button class="btn" id="t-measure">📏 Measure</button>
       <button class="btn" id="t-shot"><img class="emoji" src="/static/emoji/1f4f7.png" alt="📷"> PNG</button>
     </div>
     <div class="overlay-spin" id="spin" hidden><div class="ring"></div><div class="txt" id="spin-txt">building your map…</div></div>

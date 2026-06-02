@@ -71,6 +71,11 @@ function sunPosition(date, lat, lng) {
   return { azimuth: az + Math.PI, altitude: alt };          // from-south → from-north
 }
 
+// Real-world distance formatter (metres → m / km).
+function fmtDist(m) {
+  return m >= 1000 ? (m / 1000).toFixed(2) + ' km' : (m < 10 ? m.toFixed(2) : Math.round(m)) + ' m';
+}
+
 // Compass bearing + altitude → world direction. Model frame: +X=East, +Y=Up,
 // North=−Z (terrain is built x=east, y=north, then rotated z-up → y-up).
 function sunDirWorld(azimuth, altitude) {
@@ -127,6 +132,14 @@ class Viewer {
     this.sunMode = 'default';                    // 'default' | 'real'
     this.sunDate = new Date();                   // chosen local date
     this.sunMinutes = 720;                       // chosen local minutes-of-day
+    // measuring (real-world distances; world units are metres)
+    this.raycaster = new THREE.Raycaster();
+    this.measureMode = false;
+    this.measurePoints = [];                     // world-space Vector3s
+    this.measureSegments = [];                   // { mid, el, horiz }
+    this.measureGroup = new THREE.Group();
+    this.scene.add(this.measureGroup);
+    this._initMeasurePointer();
     this._resize();
     new ResizeObserver(() => this._resize()).observe(stage);
     this._loop();
@@ -237,6 +250,109 @@ class Viewer {
     rose.style.transform = `rotate(${-heading}deg)`;
   }
 
+  /* ---- measuring tool (real-world distances) ---- */
+  _initMeasurePointer() {
+    const el = this.renderer.domElement;
+    let dx = 0, dy = 0, moved = false;
+    el.addEventListener('pointerdown', (e) => { dx = e.clientX; dy = e.clientY; moved = false; });
+    el.addEventListener('pointermove', (e) => {
+      if (Math.abs(e.clientX - dx) > 4 || Math.abs(e.clientY - dy) > 4) moved = true;
+    });
+    el.addEventListener('pointerup', (e) => {
+      // A click (not an orbit drag) while measuring drops a point on the surface.
+      if (!this.measureMode || moved || !this.model) return;
+      const rect = el.getBoundingClientRect();
+      const ptr = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1);
+      this.raycaster.setFromCamera(ptr, this.camera);
+      const meshes = this.meshes.filter((m) => m.mesh.visible).map((m) => m.mesh);
+      const hit = this.raycaster.intersectObjects(meshes, false)[0];
+      if (hit) this.addMeasurePoint(hit.point.clone());
+    });
+  }
+
+  toggleMeasure() {
+    this.measureMode = !this.measureMode;
+    this.renderer.domElement.style.cursor = this.measureMode ? 'crosshair' : '';
+    const panel = $('measure-panel'); if (panel) panel.hidden = !this.measureMode;
+    if (!this.measureMode) this.clearMeasure();
+    else this._updateMeasurePanel();
+    return this.measureMode;
+  }
+
+  addMeasurePoint(p) {
+    const r = Math.max(this.span * 0.006, 0.5);
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(r, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0xff5a1f, depthTest: false }));
+    marker.position.copy(p); marker.renderOrder = 999;
+    this.measureGroup.add(marker);
+
+    const prev = this.measurePoints[this.measurePoints.length - 1];
+    this.measurePoints.push(p);
+    if (prev) {
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([prev, p]),
+        new THREE.LineBasicMaterial({ color: 0xff5a1f, depthTest: false }));
+      line.renderOrder = 998;
+      this.measureGroup.add(line);
+      const horiz = Math.hypot(p.x - prev.x, p.z - prev.z);  // metres (x=E, z=−N)
+      const el = document.createElement('div');
+      el.className = 'measure-label';
+      const host = $('measure-labels'); if (host) host.appendChild(el);
+      this.measureSegments.push({ mid: prev.clone().lerp(p, 0.5), el, horiz });
+    }
+    this._updateMeasurePanel();
+    this.updateMeasureLabels();
+  }
+
+  updateMeasureLabels() {
+    if (!this.measureSegments.length) return;
+    const el = this.renderer.domElement;
+    const w = el.clientWidth, h = el.clientHeight;
+    const v = new THREE.Vector3();
+    for (const s of this.measureSegments) {
+      v.copy(s.mid).project(this.camera);
+      const behind = v.z > 1;
+      s.el.style.display = behind ? 'none' : 'block';
+      if (behind) continue;
+      s.el.style.left = ((v.x * 0.5 + 0.5) * w) + 'px';
+      s.el.style.top = ((-v.y * 0.5 + 0.5) * h) + 'px';
+      s.el.textContent = fmtDist(s.horiz);
+    }
+  }
+
+  clearMeasure() {
+    for (const c of [...this.measureGroup.children]) {
+      this.measureGroup.remove(c);
+      if (c.geometry) c.geometry.dispose();
+      if (c.material) c.material.dispose();
+    }
+    for (const s of this.measureSegments) s.el.remove();
+    this.measurePoints = []; this.measureSegments = [];
+    this._updateMeasurePanel();
+  }
+
+  _updateMeasurePanel() {
+    const out = $('measure-readout'); if (!out) return;
+    if (this.measurePoints.length < 2) {
+      out.textContent = this.measurePoints.length === 1
+        ? 'Click another point…' : 'Click two points on the map to measure.';
+      return;
+    }
+    let total = 0;
+    for (const s of this.measureSegments) total += s.horiz;
+    const a = this.measurePoints[this.measurePoints.length - 2];
+    const b = this.measurePoints[this.measurePoints.length - 1];
+    const seg = Math.hypot(b.x - a.x, b.z - a.z);
+    const dz = b.y - a.y;
+    out.innerHTML =
+      `<div class="m-row"><span>Segment</span><b>${fmtDist(seg)}</b></div>` +
+      `<div class="m-row"><span>Elevation Δ</span><b>${dz >= 0 ? '+' : ''}${Math.round(dz)} m</b></div>` +
+      `<div class="m-row total"><span>Total path</span><b>${fmtDist(total)}</b></div>`;
+  }
+
   async load(url) {
     const gltf = await new GLTFLoader().loadAsync(url);
     if (this.model) this.scene.remove(this.model);
@@ -244,6 +360,7 @@ class Viewer {
     this.model.rotation.x = -Math.PI / 2;
     this.scene.add(this.model);
     this.scene.updateMatrixWorld(true);
+    this.clearMeasure();   // drop any measurement from the previous model
 
     // height range (world Y) for the topographic theme
     const box0 = new THREE.Box3().setFromObject(this.model);
@@ -354,6 +471,7 @@ class Viewer {
       if (acc >= 500 && !hud.hidden) { hud.textContent = Math.round(1000 * frames / acc) + ' fps'; frames = 0; acc = 0; }
       this.controls.update();
       if (this.model) this.updateCompass();
+      if (this.measureMode) this.updateMeasureLabels();
       this.renderer.render(this.scene, this.camera);
     };
     requestAnimationFrame(tick);
@@ -392,6 +510,8 @@ $('t-sun').addEventListener('click', (e) => {
   $('sun-panel').hidden = !open;
   e.currentTarget.classList.toggle('primary', open);
 });
+$('t-measure').addEventListener('click', (e) => e.currentTarget.classList.toggle('primary', viewer.toggleMeasure()));
+$('measure-clear').addEventListener('click', () => viewer.clearMeasure());
 $('t-shot').addEventListener('click', () => viewer.shot(lastId || 'mapgen'));
 
 /* ---- sun panel ---- */
