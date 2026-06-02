@@ -108,9 +108,17 @@ _MEASURE_RE = re.compile(r"\b\d+(?:\.\d+)?\s*k(?:m|ilomet\w*)\b|\b1\s*:\s*\d+\b"
 
 
 def _clean_loc(loc: str) -> str:
-    """Strip extent/scale tokens so the geocoder gets a clean place name."""
+    """Reduce a captured phrase to a clean place name for the geocoder: cut at
+    hard separators that never belong inside a place name (arrows, dashes,
+    pipes, colons, semicolons, newlines), drop extent/scale tokens, and keep at
+    most the first two comma groups (e.g. "City, Country")."""
+    loc = re.split(r"\s*(?:→|->|—|–|\||;|:|\n)\s*", loc, maxsplit=1)[0]
     loc = _MEASURE_RE.sub(" ", loc)
-    return re.sub(r"\s+", " ", loc).strip(" ,.;")
+    loc = re.sub(r"\s+", " ", loc).strip(" ,.;")
+    parts = [p.strip() for p in loc.split(",") if p.strip()]
+    if len(parts) > 2:
+        parts = parts[:2]
+    return ", ".join(parts)
 
 
 def _is_placeish(loc: str) -> bool:
