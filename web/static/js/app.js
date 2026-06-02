@@ -8,6 +8,12 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 const $ = (id) => document.getElementById(id);
 const CSRF = document.querySelector('meta[name=csrf-token]').content;
 
+// scratch objects reused by the shadow-frustum fit (avoid per-frame allocation)
+const _v0 = new THREE.Vector3();
+const _lightView = new THREE.Matrix4();
+const UP_Y = new THREE.Vector3(0, 1, 0);
+const UP_Z = new THREE.Vector3(0, 0, 1);
+
 function toast(msg, kind = 'err') {
   const w = $('toasts');
   const t = document.createElement('div');
@@ -119,11 +125,14 @@ class Viewer {
     this.scene.add(new THREE.HemisphereLight(0xbfd6ff, 0x3a352c, 0.55));
     this.sun = new THREE.DirectionalLight(0xfff3df, 2.6);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
-    this.sun.shadow.bias = -0.0004; this.sun.shadow.normalBias = 1.0;
+    this.sun.shadow.mapSize.set(4096, 4096);
+    this.sun.shadow.bias = -0.00015; this.sun.shadow.normalBias = 0.2;
     this.scene.add(this.sun, this.sun.target);
 
     this.span = 1000; this.center = new THREE.Vector3();
+    // world-space bounds of the shadow casters (buildings if any, else the whole
+    // model); the shadow frustum is fit tightly to this — see _fitShadow().
+    this.casterBox = new THREE.Box3();
     this.meshes = [];
     // themes + sun state
     this.THEMES = ['satellite', 'wireframe', 'topographic', 'blueprint'];
@@ -156,9 +165,35 @@ class Viewer {
     this.sky.material.uniforms.sunPosition.value.copy(dir);
     this.sun.position.copy(this.center).addScaledVector(dir, this.span * 1.6);
     this.sun.target.position.copy(this.center);
-    const s = this.span * 0.72, c = this.sun.shadow.camera;
-    c.left = -s; c.right = s; c.top = s; c.bottom = -s;
-    c.near = this.span * 0.05; c.far = this.span * 4.5; c.updateProjectionMatrix();
+    this._fitShadow(this.casterBox);
+  }
+
+  // Fit the directional-light shadow ortho frustum to a world-space box, as seen
+  // from the light. Tighter frustum -> far more shadow-map texels per metre, so
+  // building shadows on the terrain are sharp instead of lost across the extent.
+  _fitShadow(box) {
+    if (!box || box.isEmpty()) return;
+    const cam = this.sun.shadow.camera;
+    const dir = _v0.copy(this.sun.position).sub(this.center).normalize();
+    const up = Math.abs(dir.y) > 0.999 ? UP_Z : UP_Y;
+    _lightView.lookAt(this.sun.position, this.center, up);
+    _lightView.setPosition(this.sun.position);
+    _lightView.invert();
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    for (let i = 0; i < 8; i++) {
+      _v0.set(i & 1 ? box.max.x : box.min.x,
+              i & 2 ? box.max.y : box.min.y,
+              i & 4 ? box.max.z : box.min.z).applyMatrix4(_lightView);
+      minX = Math.min(minX, _v0.x); maxX = Math.max(maxX, _v0.x);
+      minY = Math.min(minY, _v0.y); maxY = Math.max(maxY, _v0.y);
+      minZ = Math.min(minZ, _v0.z); maxZ = Math.max(maxZ, _v0.z);
+    }
+    const pad = Math.max(maxX - minX, maxY - minY) * 0.15 + 1;
+    cam.left = minX - pad; cam.right = maxX + pad;
+    cam.bottom = minY - pad; cam.top = maxY + pad;
+    cam.near = Math.max(-maxZ - pad, 0.1); cam.far = -minZ + pad;
+    cam.updateProjectionMatrix();
   }
 
   // Cinematic default sun (used until "real sun" is enabled).
@@ -372,6 +407,11 @@ class Viewer {
       if (!o.isMesh) return;
       const kind = classifyMesh(o.name || (o.parent && o.parent.name) || '');
       const m = o.material; m.vertexColors = true; o.castShadow = true; o.receiveShadow = true;
+      // The GLB ships without vertex normals, so GLTFLoader turns on flatShading;
+      // a mesh in that state can't receive shadows. Give it real normals and use
+      // smooth shading so the terrain ("floor") actually shows building shadows.
+      if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+      m.flatShading = false;
       if (kind === 'water') {
         m.roughness = 0.06; m.metalness = 0.15; m.transparent = true; m.opacity = 0.72;
         m.depthWrite = false; m.envMapIntensity = 1.0; o.castShadow = false; o.receiveShadow = false;
@@ -414,6 +454,12 @@ class Viewer {
     const size = box.getSize(new THREE.Vector3());
     this.center = box.getCenter(new THREE.Vector3());
     this.span = Math.max(size.x, size.z) || 1000;
+    // shadow casters: the buildings (tight box) if any, otherwise the whole model
+    this.casterBox.makeEmpty();
+    const _b = new THREE.Box3();
+    for (const e of this.meshes)
+      if (e.kind === 'buildings') this.casterBox.union(_b.setFromObject(e.mesh));
+    if (this.casterBox.isEmpty()) this.casterBox.copy(box);
     this.controls.target.copy(this.center);
 
     // Cinematic 3/4 view direction (from above + corner), kept as the look angle.

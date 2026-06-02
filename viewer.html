@@ -237,13 +237,50 @@ const hemi = new THREE.HemisphereLight(0xbfd6ff, 0x3a352c, 0.55);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff3df, 2.6);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.bias = -0.0004;
-sun.shadow.normalBias = 1.0;
+sun.shadow.mapSize.set(4096, 4096);
+sun.shadow.bias = -0.00015;
+sun.shadow.normalBias = 0.2;
 scene.add(sun);
 scene.add(sun.target);
 
 let modelSpan = 1000, modelCenter = new THREE.Vector3();
+// World-space bounds of the shadow casters (buildings if present, else whole
+// model). The shadow frustum is fit tightly to this so building shadows land on
+// the terrain at usable resolution instead of being lost across the full extent.
+let casterBox = new THREE.Box3();
+
+// Fit the directional-light shadow ortho frustum to a world-space box, as seen
+// from the light. Tighter frustum -> far more shadow-map texels per metre.
+const _corner = new THREE.Vector3(), _lightView = new THREE.Matrix4();
+const _UP_Y = new THREE.Vector3(0, 1, 0), _UP_Z = new THREE.Vector3(0, 0, 1);
+function fitShadowToBox(box) {
+  if (box.isEmpty()) return;
+  const cam = sun.shadow.camera;
+  const dir = _corner.copy(sun.position).sub(modelCenter).normalize();
+  const up = Math.abs(dir.y) > 0.999 ? _UP_Z : _UP_Y;
+  // light view matrix = inverse of the light's world pose (looking at center)
+  _lightView.lookAt(sun.position, modelCenter, up);
+  _lightView.setPosition(sun.position);
+  _lightView.invert();
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (let i = 0; i < 8; i++) {
+    _corner.set(i & 1 ? box.max.x : box.min.x,
+                i & 2 ? box.max.y : box.min.y,
+                i & 4 ? box.max.z : box.min.z).applyMatrix4(_lightView);
+    minX = Math.min(minX, _corner.x); maxX = Math.max(maxX, _corner.x);
+    minY = Math.min(minY, _corner.y); maxY = Math.max(maxY, _corner.y);
+    minZ = Math.min(minZ, _corner.z); maxZ = Math.max(maxZ, _corner.z);
+  }
+  // pad sideways so long shadows + PCF softening aren't clipped at the edges
+  const pad = Math.max(maxX - minX, maxY - minY) * 0.15 + 1;
+  cam.left = minX - pad; cam.right = maxX + pad;
+  cam.bottom = minY - pad; cam.top = maxY + pad;
+  // view looks down -Z, so the box sits at negative z; depth = -z
+  cam.near = Math.max(-maxZ - pad, 0.1);
+  cam.far = -minZ + pad;
+  cam.updateProjectionMatrix();
+}
 
 function applySun() {
   const az = +$('s-az').value, el = +$('s-el').value;
@@ -254,11 +291,7 @@ function applySun() {
   skyU['sunPosition'].value.copy(dir);
   sun.position.copy(modelCenter).add(dir.clone().multiplyScalar(modelSpan * 1.6));
   sun.target.position.copy(modelCenter);
-  const s = modelSpan * 0.72;
-  const cam = sun.shadow.camera;
-  cam.left = -s; cam.right = s; cam.top = s; cam.bottom = -s;
-  cam.near = modelSpan * 0.05; cam.far = modelSpan * 4.5;
-  cam.updateProjectionMatrix();
+  fitShadowToBox(casterBox);
   // tint fog/hemisphere with sun height
   const warm = THREE.MathUtils.clamp(1 - el / 90, 0, 1);
   scene.fog && scene.fog.color.setHSL(0.58 - warm * 0.12, 0.5, 0.62 - warm * 0.12);
@@ -299,6 +332,11 @@ function styleMaterials() {
     m.vertexColors = true;
     m.envMapIntensity = 0.5;
     o.castShadow = true; o.receiveShadow = true;
+    // The GLB ships without vertex normals, so GLTFLoader turns on flatShading;
+    // a mesh in that state can't receive shadows. Give it real normals and use
+    // smooth shading so the terrain ("floor") actually shows building shadows.
+    if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+    m.flatShading = false;
     if (kind === 'water') {
       m.roughness = 0.06; m.metalness = 0.15;
       m.transparent = true; m.opacity = 0.72; m.depthWrite = false;
@@ -320,6 +358,12 @@ function frame() {
   const size = box.getSize(new THREE.Vector3());
   modelCenter = box.getCenter(new THREE.Vector3());
   modelSpan = Math.max(size.x, size.z) || 1000;
+  // shadow casters: the buildings (tight box) if any, otherwise the whole model
+  casterBox.makeEmpty();
+  if (meshes.buildings.length) {
+    const b = new THREE.Box3();
+    for (const o of meshes.buildings) casterBox.union(b.setFromObject(o));
+  } else casterBox.copy(box);
   controls.target.copy(modelCenter);
   camera.position.set(
     modelCenter.x + modelSpan * 0.85,
