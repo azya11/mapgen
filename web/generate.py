@@ -60,6 +60,8 @@ def _run_sync(prompt: str, gen_id: str, use_real: bool, extent_km: float) -> dic
         "used_real_data": result.build.used_real_data,
         "style": result.spec.map_style.value,
         "extent_km": result.spec.extent_km,
+        "lat": result.lat,
+        "lon": result.lon,
         "stats": result.build.stats,
         "features": result._feat(),
     }

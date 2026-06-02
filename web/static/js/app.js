@@ -23,6 +23,65 @@ function esc(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+/* ------------------------------------------------ viewer theme helpers --- */
+function classifyMesh(name = '') {
+  name = name.toLowerCase();
+  if (name.includes('water')) return 'water';
+  if (name.includes('building')) return 'buildings';
+  if (name.includes('veget') || name.includes('tree') || name.includes('forest')) return 'vegetation';
+  return 'terrain';
+}
+
+// height → topographic colour (deep blue → green → yellow → brown → snow)
+const TOPO_STOPS = [
+  [0.00, 0x14324f], [0.12, 0x1f6f54], [0.38, 0x6f9a3a],
+  [0.62, 0xc6b24a], [0.82, 0x8a6a44], [1.00, 0xf2f4fa],
+];
+const _ca = new THREE.Color(), _cb = new THREE.Color(), _co = new THREE.Color();
+function topoColor(t) {
+  t = Math.min(1, Math.max(0, t));
+  for (let i = 1; i < TOPO_STOPS.length; i++) {
+    if (t <= TOPO_STOPS[i][0]) {
+      const [p0, c0] = TOPO_STOPS[i - 1], [p1, c1] = TOPO_STOPS[i];
+      const k = (t - p0) / (p1 - p0 || 1);
+      _ca.setHex(c0); _cb.setHex(c1);
+      return _co.copy(_ca).lerp(_cb, k);
+    }
+  }
+  return _co.setHex(TOPO_STOPS[TOPO_STOPS.length - 1][1]);
+}
+
+// Solar position (compact SunCalc, MIT). `date` is a JS Date (a UTC instant).
+// Returns { azimuth, altitude } in radians; azimuth is compass bearing
+// clockwise from North, altitude is angle above the horizon.
+function sunPosition(date, lat, lng) {
+  const rad = Math.PI / 180, dayMs = 86400000, J1970 = 2440588, J2000 = 2451545;
+  const e = rad * 23.4397;                                  // obliquity
+  const d = date.valueOf() / dayMs - 0.5 + J1970 - J2000;   // days since J2000
+  const M = rad * (357.5291 + 0.98560028 * d);              // mean anomaly
+  const C = rad * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M));
+  const L = M + C + rad * 102.9372 + Math.PI;               // ecliptic longitude
+  const dec = Math.asin(Math.sin(e) * Math.sin(L));
+  const ra = Math.atan2(Math.sin(L) * Math.cos(e), Math.cos(L));
+  const lw = rad * -lng, phi = rad * lat;
+  const th = rad * (280.16 + 360.9856235 * d) - lw;         // sidereal time
+  const H = th - ra;                                        // hour angle
+  const az = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(phi) - Math.tan(dec) * Math.cos(phi));
+  const alt = Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(H));
+  return { azimuth: az + Math.PI, altitude: alt };          // from-south → from-north
+}
+
+// Compass bearing + altitude → world direction. Model frame: +X=East, +Y=Up,
+// North=−Z (terrain is built x=east, y=north, then rotated z-up → y-up).
+function sunDirWorld(azimuth, altitude) {
+  const ca = Math.cos(altitude);
+  return new THREE.Vector3(
+    Math.sin(azimuth) * ca,    // east
+    Math.sin(altitude),        // up
+    -Math.cos(azimuth) * ca,   // −north
+  ).normalize();
+}
+
 /* ----------------------------------------------------------- 3D viewer --- */
 class Viewer {
   constructor(stage) {
@@ -61,6 +120,13 @@ class Viewer {
 
     this.span = 1000; this.center = new THREE.Vector3();
     this.meshes = [];
+    // themes + sun state
+    this.THEMES = ['satellite', 'wireframe', 'topographic', 'blueprint'];
+    this.theme = 'satellite';
+    this.lat = null; this.lon = null;           // geocoded centre (real maps)
+    this.sunMode = 'default';                    // 'default' | 'real'
+    this.sunDate = new Date();                   // chosen local date
+    this.sunMinutes = 720;                       // chosen local minutes-of-day
     this._resize();
     new ResizeObserver(() => this._resize()).observe(stage);
     this._loop();
@@ -72,15 +138,103 @@ class Viewer {
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
   }
 
-  _sun(az = 315, el = 50) {
-    const phi = THREE.MathUtils.degToRad(90 - el), theta = THREE.MathUtils.degToRad(az);
-    const dir = new THREE.Vector3().setFromSphericalCoords(1, phi, theta);
+  // Place sun + sky + shadow frustum along a unit direction.
+  _applySunDir(dir) {
     this.sky.material.uniforms.sunPosition.value.copy(dir);
-    this.sun.position.copy(this.center).add(dir.multiplyScalar(this.span * 1.6));
+    this.sun.position.copy(this.center).addScaledVector(dir, this.span * 1.6);
     this.sun.target.position.copy(this.center);
     const s = this.span * 0.72, c = this.sun.shadow.camera;
     c.left = -s; c.right = s; c.top = s; c.bottom = -s;
     c.near = this.span * 0.05; c.far = this.span * 4.5; c.updateProjectionMatrix();
+  }
+
+  // Cinematic default sun (used until "real sun" is enabled).
+  _sun(az = 315, el = 50) {
+    const phi = THREE.MathUtils.degToRad(90 - el), theta = THREE.MathUtils.degToRad(az);
+    this._applySunDir(new THREE.Vector3().setFromSphericalCoords(1, phi, theta));
+  }
+
+  // Convert the chosen local date + minutes-of-day to a UTC instant, using a
+  // longitude-estimated timezone so "noon" reads as local noon at the place.
+  _sunInstant() {
+    const d = this.sunDate;
+    const tzHours = this.lon == null ? 0 : Math.round(this.lon / 15);
+    const ms = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())
+      + this.sunMinutes * 60000 - tzHours * 3600000;
+    return new Date(ms);
+  }
+
+  applySun() {
+    if (this.sunMode === 'real' && this.lat != null) {
+      const p = sunPosition(this._sunInstant(), this.lat, this.lon == null ? 0 : this.lon);
+      // Keep the light a touch above the horizon so the scene stays lit even
+      // when the real sun has just set (still report the true values).
+      const alt = Math.max(p.altitude, THREE.MathUtils.degToRad(1.5));
+      this._applySunDir(sunDirWorld(p.azimuth, alt));
+      this._sunInfo(p);
+    } else {
+      this._sun();
+      const el = $('sun-info'); if (el) el.textContent = '';
+    }
+  }
+
+  _sunInfo(p) {
+    const el = $('sun-info'); if (!el) return;
+    const azDeg = ((p.azimuth * 180 / Math.PI) % 360 + 360) % 360;
+    const elDeg = p.altitude * 180 / Math.PI;
+    const dir = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(azDeg / 45) % 8];
+    el.textContent = elDeg < 0
+      ? `☾ Sun below horizon (${elDeg.toFixed(0)}°)`
+      : `☀ ${azDeg.toFixed(0)}° ${dir} · ${elDeg.toFixed(0)}° above horizon`;
+  }
+
+  // The map's geocoded centre (null for procedural maps).
+  setLocation(lat, lon) { this.lat = lat; this.lon = lon; }
+
+  /* ---- colour / texture themes (mirrors the landing-page background) ---- */
+  setTheme(name) {
+    this.theme = name;
+    const blueprint = name === 'blueprint';
+    const wire = name === 'wireframe';
+    for (const e of this.meshes) {
+      const { mesh, kind, base, topo } = e;
+      const m = mesh.material, g = mesh.geometry;
+      mesh.visible = !(kind === 'water' && wire);
+      if (blueprint) {
+        if (g.attributes.color) g.deleteAttribute('color');
+        m.vertexColors = false; m.wireframe = false;
+        m.color.setHex(kind === 'buildings' ? 0x10131c : 0x0b0e16);
+        m.emissive.setHex(0xff4a1c);
+        m.emissiveIntensity = kind === 'buildings' ? 0.22 : 0.07;
+        m.metalness = 0.1; m.roughness = 0.8;
+      } else {
+        m.emissive.setHex(0x000000); m.emissiveIntensity = 1;
+        m.vertexColors = true;
+        m.wireframe = wire && kind !== 'water';
+        if (name === 'topographic') g.setAttribute('color', topo);
+        else if (base) g.setAttribute('color', base.clone());
+        m.color.setRGB(1, 1, 1);   // white base so vertex colours show; restores water too
+      }
+      m.needsUpdate = true;
+    }
+    this.scene.background = blueprint ? new THREE.Color(0x05070d) : null;
+    this.sky.visible = !blueprint;
+    const lbl = $('theme-name'); if (lbl) lbl.textContent = name;
+  }
+
+  cycleTheme() {
+    const i = (this.THEMES.indexOf(this.theme) + 1) % this.THEMES.length;
+    this.setTheme(this.THEMES[i]);
+    return this.theme;
+  }
+
+  // Rotate the compass so North (world −Z) reads correctly for the camera.
+  updateCompass() {
+    const rose = $('compass-rose'); if (!rose || !this.model) return;
+    const dx = this.controls.target.x - this.camera.position.x;
+    const dz = this.controls.target.z - this.camera.position.z;
+    const heading = Math.atan2(dx, -dz) * 180 / Math.PI;   // 0=looking N, 90=E
+    rose.style.transform = `rotate(${-heading}deg)`;
   }
 
   async load(url) {
@@ -89,21 +243,43 @@ class Viewer {
     this.model = gltf.scene;
     this.model.rotation.x = -Math.PI / 2;
     this.scene.add(this.model);
+    this.scene.updateMatrixWorld(true);
+
+    // height range (world Y) for the topographic theme
+    const box0 = new THREE.Box3().setFromObject(this.model);
+    const minY = box0.min.y, relief = Math.max(box0.max.y - box0.min.y, 1);
+
     this.meshes = [];
+    const v = new THREE.Vector3();
     this.model.traverse((o) => {
       if (!o.isMesh) return;
-      this.meshes.push(o);
-      const name = (o.name || (o.parent && o.parent.name) || '').toLowerCase();
+      const kind = classifyMesh(o.name || (o.parent && o.parent.name) || '');
       const m = o.material; m.vertexColors = true; o.castShadow = true; o.receiveShadow = true;
-      if (name.includes('water')) {
+      if (kind === 'water') {
         m.roughness = 0.06; m.metalness = 0.15; m.transparent = true; m.opacity = 0.72;
         m.depthWrite = false; m.envMapIntensity = 1.0; o.castShadow = false; o.receiveShadow = false;
         m.color.setRGB(1, 1, 1);
-      } else if (name.includes('building')) { m.roughness = 0.6; m.metalness = 0.08; m.envMapIntensity = 0.7; }
-      else if (name.includes('veget')) { m.roughness = 0.9; m.metalness = 0; o.receiveShadow = false; }
+      } else if (kind === 'buildings') { m.roughness = 0.6; m.metalness = 0.08; m.envMapIntensity = 0.7; }
+      else if (kind === 'vegetation') { m.roughness = 0.9; m.metalness = 0; o.receiveShadow = false; }
       else { m.roughness = 0.96; m.metalness = 0; }
       m.needsUpdate = true;
+
+      // precompute a height-based (topographic) colour attribute
+      const g = o.geometry, pos = g.attributes.position;
+      const topo = new Float32Array(pos.count * 3);
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i); o.localToWorld(v);
+        const c = topoColor((v.y - minY) / relief);
+        topo[i * 3] = c.r; topo[i * 3 + 1] = c.g; topo[i * 3 + 2] = c.b;
+      }
+      this.meshes.push({
+        mesh: o, kind,
+        base: g.attributes.color ? g.attributes.color.clone() : null,
+        topo: new THREE.BufferAttribute(topo, 3),
+      });
     });
+
+    this.setTheme(this.theme);
     this.frame();
     return this._info();
   }
@@ -157,11 +333,11 @@ class Viewer {
     this.camera.updateProjectionMatrix();
     this.controls.maxDistance = dist * 4; this.controls.minDistance = this.span * 0.05;
     this.scene.fog = new THREE.Fog(0x9fb8da, dist * 1.4, dist * 6 + this.span * 4);
-    this._sun();
+    this.applySun();
+    this.updateCompass();
   }
 
   toggleRotate() { this.controls.autoRotate = !this.controls.autoRotate; this.controls.autoRotateSpeed = 0.7; return this.controls.autoRotate; }
-  toggleWire() { this._wire = !this._wire; this.meshes.forEach((o) => (o.material.wireframe = this._wire)); return this._wire; }
   shot(name) {
     this.renderer.render(this.scene, this.camera);
     const a = document.createElement('a');
@@ -177,6 +353,7 @@ class Viewer {
       acc += now - last; last = now; frames++;
       if (acc >= 500 && !hud.hidden) { hud.textContent = Math.round(1000 * frames / acc) + ' fps'; frames = 0; acc = 0; }
       this.controls.update();
+      if (this.model) this.updateCompass();
       this.renderer.render(this.scene, this.camera);
     };
     requestAnimationFrame(tick);
@@ -209,8 +386,55 @@ $('logout').addEventListener('click', async () => {
 
 $('t-frame').addEventListener('click', () => viewer.frame());
 $('t-rotate').addEventListener('click', (e) => e.currentTarget.classList.toggle('primary', viewer.toggleRotate()));
-$('t-wire').addEventListener('click', (e) => e.currentTarget.classList.toggle('primary', viewer.toggleWire()));
+$('t-theme').addEventListener('click', () => viewer.cycleTheme());
+$('t-sun').addEventListener('click', (e) => {
+  const open = $('sun-panel').hidden;
+  $('sun-panel').hidden = !open;
+  e.currentTarget.classList.toggle('primary', open);
+});
 $('t-shot').addEventListener('click', () => viewer.shot(lastId || 'mapgen'));
+
+/* ---- sun panel ---- */
+(function initSun() {
+  const today = new Date();
+  $('sun-date').value = today.toISOString().slice(0, 10);
+  viewer.sunDate = today; viewer.sunMinutes = 720;
+})();
+function fmtTime(min) {
+  const h = Math.floor(min / 60), m = min % 60;
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
+$('sun-real').addEventListener('change', (e) => {
+  viewer.sunMode = e.target.checked ? 'real' : 'default';
+  $('sun-fields').hidden = !e.target.checked;
+  viewer.applySun();
+});
+$('sun-date').addEventListener('change', (e) => {
+  const [y, m, d] = e.target.value.split('-').map(Number);
+  if (y) { viewer.sunDate = new Date(y, m - 1, d); viewer.applySun(); }
+});
+$('sun-time').addEventListener('input', (e) => {
+  viewer.sunMinutes = +e.target.value;
+  $('sun-time-val').textContent = fmtTime(viewer.sunMinutes);
+  viewer.applySun();
+});
+$('sun-lat').addEventListener('input', (e) => {
+  viewer.lat = +e.target.value;
+  $('sun-lat-val').textContent = (+e.target.value).toFixed(1) + '°';
+  viewer.applySun();
+});
+
+// Sync the sun controls to a freshly loaded map (real maps carry lat/lon).
+function syncSun(meta) {
+  viewer.lon = (meta && meta.lon != null) ? meta.lon : null;
+  const latSlider = $('sun-lat');
+  if (meta && meta.lat != null) {
+    latSlider.value = (+meta.lat).toFixed(1);
+    $('sun-lat-val').textContent = (+meta.lat).toFixed(1) + '°';
+  }
+  viewer.lat = parseFloat(latSlider.value);
+  viewer.applySun();
+}
 
 let lastId = null;
 
@@ -248,6 +472,7 @@ $('generate').addEventListener('click', async () => {
       $('empty').hidden = true; $('hud').hidden = false; $('tools').hidden = false;
       $('spin-txt').textContent = 'loading model…';
       const info = await viewer.load(`/files/${data.id}/${data.files.glb}`);
+      syncSun(data);
       renderResult(data, '', info);
       setUsage(data.remaining, data.limit);
       loadHistory();
@@ -301,6 +526,7 @@ async function runOnWorker(data) {
   $('empty').hidden = true; $('hud').hidden = false; $('tools').hidden = false;
   $('spin-txt').textContent = 'loading model…';
   const info = await viewer.load(`${base}/files/${wd.id}/${wd.files.glb}`);
+  syncSun(wd);
   renderResult(wd, base, info);
   if (conf.limit != null) setUsage(conf.remaining, conf.limit);
   loadHistory();
@@ -365,6 +591,7 @@ async function openSaved(it) {
   try {
     lastId = it.id;
     const info = await viewer.load(it.glb);
+    syncSun(it);   // history rows have no lat/lon; falls back to the lat slider
     $('stats').innerHTML = [
       ['Location', esc(it.location || '—') + (it.used_real ? ' · real' : ' · procedural')],
       ['Extent', info.km.toFixed(2) + ' km'],

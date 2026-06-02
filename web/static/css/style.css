@@ -202,8 +202,30 @@ footer.site { font-family:var(--font-mono); text-transform:uppercase; letter-spa
 .hud { position:absolute; top:14px; right:14px; z-index:5; padding:6px 11px; font-family:var(--font-mono);
   font-size:11px; color:var(--accent); }
 .hud::before { content:''; display:inline-block; width:7px; height:7px; border-radius:1px; background:var(--accent); margin-right:7px; }
-.viewer-tools { position:absolute; bottom:14px; left:14px; z-index:5; display:flex; gap:8px; }
+.viewer-tools { position:absolute; bottom:14px; left:14px; z-index:5; display:flex; gap:8px; flex-wrap:wrap; }
 .viewer-tools .btn { padding:8px 12px; font-size:11.5px; font-family:var(--font-mono); }
+
+/* compass */
+.compass { position:absolute; top:14px; left:14px; z-index:5; width:62px; height:62px; border-radius:50%; padding:0; }
+.compass .rose { position:relative; width:100%; height:100%; }
+.compass .dir { position:absolute; font-family:var(--font-mono); font-size:10px; color:var(--faint); }
+.compass .dir.n { top:4px; left:50%; transform:translateX(-50%); color:var(--accent); font-weight:700; }
+.compass .dir.s { bottom:4px; left:50%; transform:translateX(-50%); }
+.compass .dir.e { right:5px; top:50%; transform:translateY(-50%); }
+.compass .dir.w { left:5px; top:50%; transform:translateY(-50%); }
+.compass .needle { position:absolute; left:50%; top:50%; width:0; height:0;
+  border-left:4px solid transparent; border-right:4px solid transparent; border-bottom:17px solid var(--accent);
+  transform:translate(-50%,-100%); }
+
+/* sun panel */
+.sun-panel { position:absolute; top:88px; left:14px; z-index:6; width:232px; padding:14px;
+  display:flex; flex-direction:column; gap:9px; }
+.sun-panel .sec-label { margin:0 0 1px; }
+.sun-panel .field { margin:0; }
+.sun-panel .sw.sm { font-size:12.5px; }
+.sun-panel input[type=date] { width:100%; background:var(--bg-2); border:1px solid var(--line); color:var(--txt);
+  border-radius:var(--r); padding:6px 8px; font-family:var(--font-mono); font-size:12px; color-scheme:dark; }
+.sun-info { font-family:var(--font-mono); font-size:11.5px; color:var(--accent); min-height:14px; }
 
 /* ---------- toast ---------- */
 .toast-wrap { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); z-index:100; display:flex; flex-direction:column; gap:8px; align-items:center; }

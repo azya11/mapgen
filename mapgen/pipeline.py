@@ -25,6 +25,10 @@ class PipelineResult:
     build: SceneBuildResult
     files: dict[str, str]
     timings: dict[str, float] = field(default_factory=dict)
+    # Geocoded centre of the modelled area (real locations only); enables a
+    # true sun position from date/time in the viewer.
+    lat: float | None = None
+    lon: float | None = None
 
     def summary(self) -> str:
         lines = [
@@ -120,6 +124,8 @@ class Pipeline:
         t = time.time()
         bbox, elevation, osm = self._resolve_geo(spec)
         timings["geo"] = time.time() - t
+        lat = bbox.center.lat if bbox is not None else None
+        lon = bbox.center.lon if bbox is not None else None
 
         # 3) BUILD -----------------------------------------------------
         t = time.time()
@@ -136,7 +142,8 @@ class Pipeline:
         timings["export"] = time.time() - t
 
         return PipelineResult(
-            prompt=prompt, spec=spec, build=build, files=files, timings=timings
+            prompt=prompt, spec=spec, build=build, files=files, timings=timings,
+            lat=lat, lon=lon,
         )
 
     # ------------------------------------------------------------------ #
