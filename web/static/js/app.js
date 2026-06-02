@@ -122,13 +122,41 @@ class Viewer {
     this.center = box.getCenter(new THREE.Vector3());
     this.span = Math.max(size.x, size.z) || 1000;
     this.controls.target.copy(this.center);
-    this.camera.position.set(
-      this.center.x + this.span * 0.85,
-      this.center.y + Math.max(size.y * 2.2, this.span * 0.55),
-      this.center.z + this.span * 0.95);
-    this.camera.near = this.span / 800; this.camera.far = this.span * 60; this.camera.updateProjectionMatrix();
-    this.controls.maxDistance = this.span * 6; this.controls.minDistance = this.span * 0.05;
-    this.scene.fog = new THREE.Fog(0x9fb8da, this.span * 1.6, this.span * 7);
+
+    // Cinematic 3/4 view direction (from above + corner), kept as the look angle.
+    const dir = new THREE.Vector3(
+      this.span * 0.85,
+      Math.max(size.y * 2.2, this.span * 0.55),
+      this.span * 0.95,
+    ).normalize();
+
+    // Camera basis for that direction (signs don't matter — we use magnitudes).
+    const look = dir.clone().negate();                 // camera looks this way
+    const right = new THREE.Vector3().crossVectors(look, new THREE.Vector3(0, 1, 0)).normalize();
+    const up = new THREE.Vector3().crossVectors(right, look).normalize();
+
+    // Fit distance so all 8 box corners sit inside the frustum with no margin:
+    // for each corner, the camera must be far enough that its lateral offset
+    // fits the horizontal/vertical half-angles at that corner's depth.
+    const vTan = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2);
+    const hTan = vTan * this.camera.aspect;
+    const hx = size.x / 2, hy = size.y / 2, hz = size.z / 2;
+    let dist = 0;
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+      const c = new THREE.Vector3(sx * hx, sy * hy, sz * hz); // corner rel. to center
+      const along = c.dot(dir);                                // depth toward camera
+      const lateralH = Math.abs(c.dot(right)) / hTan;
+      const lateralV = Math.abs(c.dot(up)) / vTan;
+      dist = Math.max(dist, along + lateralH, along + lateralV);
+    }
+    dist *= 1.02; // a hair of breathing room, otherwise edge-to-edge
+
+    this.camera.position.copy(this.center).addScaledVector(dir, dist);
+    this.camera.near = Math.max(this.span / 800, dist / 5000);
+    this.camera.far = dist * 8 + this.span * 4;
+    this.camera.updateProjectionMatrix();
+    this.controls.maxDistance = dist * 4; this.controls.minDistance = this.span * 0.05;
+    this.scene.fog = new THREE.Fog(0x9fb8da, dist * 1.4, dist * 6 + this.span * 4);
     this._sun();
   }
 

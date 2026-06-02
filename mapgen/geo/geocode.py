@@ -65,13 +65,31 @@ class BBox:
         return x, y
 
 
+# Result classes that denote an actual place/area rather than a shop, road,
+# or POI — preferred when a prompt names a real location so we don't centre the
+# map on, say, a café called "London" instead of the city.
+_PLACE_CLASSES = {"place", "boundary"}
+
+
+def _result_score(d: dict) -> tuple[float, float]:
+    """Rank candidates: real places/areas first, then by Nominatim importance."""
+    cls = d.get("class", "")
+    return (1.0 if cls in _PLACE_CLASSES else 0.0, float(d.get("importance", 0.0)))
+
+
 def geocode(query: str, config: Config) -> GeoPoint | None:
     if not config.use_network:
         return None
     try:
         r = requests.get(
             config.nominatim_url,
-            params={"q": query, "format": "json", "limit": 1},
+            params={
+                "q": query,
+                "format": "jsonv2",
+                "limit": 5,            # disambiguate, then pick the best below
+                "addressdetails": 0,
+                "accept-language": "en",
+            },
             headers={"User-Agent": config.user_agent},
             timeout=config.request_timeout,
         )
@@ -79,7 +97,10 @@ def geocode(query: str, config: Config) -> GeoPoint | None:
         data = r.json()
         if not data:
             return None
-        top = data[0]
+        # Prefer an actual place/administrative area over an incidental POI,
+        # breaking ties by importance — far less guesswork than blindly taking
+        # the first hit.
+        top = max(data, key=_result_score)
         return GeoPoint(
             lat=float(top["lat"]),
             lon=float(top["lon"]),

@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 
 from ..config import Config
+from ..scale import scale_to_extent_km
 from ..spec import (
     Direction,
     FeatureType,
@@ -101,6 +102,17 @@ def _titlecase(loc: str) -> str:
     return " ".join(w[:1].upper() + w[1:] if w else w for w in loc.split())
 
 
+# Measurement / scale tokens that sometimes get swept into a captured place
+# phrase (e.g. "Kyoto 3km", "Tokyo 1:8") and would wreck geocoding precision.
+_MEASURE_RE = re.compile(r"\b\d+(?:\.\d+)?\s*k(?:m|ilomet\w*)\b|\b1\s*:\s*\d+\b", re.IGNORECASE)
+
+
+def _clean_loc(loc: str) -> str:
+    """Strip extent/scale tokens so the geocoder gets a clean place name."""
+    loc = _MEASURE_RE.sub(" ", loc)
+    return re.sub(r"\s+", " ", loc).strip(" ,.;")
+
+
 def _is_placeish(loc: str) -> bool:
     """True unless the phrase is built only from generic geographic nouns."""
     tokens = re.findall(r"[a-z']+", loc.lower())
@@ -138,7 +150,7 @@ class RuleParser(Parser):
             m = rx.search(text)
             if not m:
                 continue
-            loc = re.sub(r"\s+", " ", m.group(1)).strip(" ,.;")
+            loc = _clean_loc(m.group(1))
             if loc and _is_placeish(loc):
                 is_real = real_intent or not fictional
                 return _titlecase(loc), is_real
@@ -160,6 +172,10 @@ class RuleParser(Parser):
         return MapStyle.terrain
 
     def _extent(self, low: str, style: MapStyle) -> float:
+        # A "1:N" scale ratio (ground coverage) takes precedence over everything.
+        scale_extent = scale_to_extent_km(low)
+        if scale_extent is not None:
+            return scale_extent
         m = re.search(r"(\d+(?:\.\d+)?)\s*(km|kilomet)", low)
         if m:
             return max(0.1, min(200.0, float(m.group(1))))

@@ -14,6 +14,7 @@ from .generate import build_scene
 from .generate.scene import SceneBuildResult
 from .geo import BBox, elevation_grid, fetch_osm, geocode
 from .parser import make_parser
+from .scale import scale_to_extent_km
 from .spec import SceneSpec
 
 
@@ -86,8 +87,18 @@ class Pipeline:
             spec.is_real_location = True
         if overrides.get("force_real") is not None:
             spec.is_real_location = bool(overrides["force_real"])
-        if overrides.get("extent_km"):
+        # Extent precedence: a "1:N" scale ratio in the prompt (ground coverage)
+        # beats an explicit km value (e.g. the web slider), which beats the
+        # parser's inference.
+        scale_extent = scale_to_extent_km(prompt)
+        if scale_extent is not None:
+            spec.extent_km = scale_extent
+        elif overrides.get("extent_km"):
             spec.extent_km = float(overrides["extent_km"])
+        # Host-imposed ceiling (the worker caps the modelled area for resources).
+        cap = overrides.get("max_extent_km")
+        if cap:
+            spec.extent_km = min(spec.extent_km, float(cap))
         if overrides.get("map_style"):
             spec.map_style = overrides["map_style"]
         if overrides:

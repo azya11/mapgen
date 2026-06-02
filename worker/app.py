@@ -71,6 +71,8 @@ def _run_sync(prompt: str, gen_id: str, use_real: bool, extent_km: float) -> dic
     pipe = Pipeline(config=cfg)
     overrides = {
         "extent_km": min(max(extent_km, 0.5), MAX_EXTENT_KM),
+        # A "1:N" scale ratio in the prompt may override extent_km; cap it here.
+        "max_extent_km": MAX_EXTENT_KM,
         "force_real": None if use_real else False,
     }
     result = pipe.run(
