@@ -78,7 +78,14 @@ class Pipeline:
         t = time.time()
         parser = make_parser(self.config)
         self._log(f"[1/4] Parsing prompt with {parser.name} ...")
-        spec = parser.parse(prompt)
+        try:
+            spec = parser.parse(prompt)
+        except Exception as e:
+            # A parser backend failure (e.g. Claude API key/access/network)
+            # must never crash generation — degrade to the offline rule parser.
+            self._log(f"      {parser.name} parser failed ({e!r}); falling back to rule parser.")
+            from .parser.rule_parser import RuleParser
+            spec = RuleParser(self.config).parse(prompt)
         timings["parse"] = time.time() - t
 
         # Explicit user overrides win over whatever the parser inferred.

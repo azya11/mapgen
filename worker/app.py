@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import traceback
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -130,6 +131,8 @@ async def generate(request: Request):
         except asyncio.TimeoutError:
             return JSONResponse({"error": "Generation timed out. Try a smaller area."}, status_code=504)
         except Exception:
+            # Surface the real cause in the Space logs; keep the client message generic.
+            traceback.print_exc()
             return JSONResponse({"error": "Generation failed. Please try again."}, status_code=500)
     return JSONResponse(result)
 
