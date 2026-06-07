@@ -80,3 +80,21 @@ def test_registry_enforces_poly_budget():
 
     with pytest.raises(ValueError, match="poly budget"):
         registry.build("test.toomany", {}, np.random.default_rng(0))
+
+
+def test_rock_generator():
+    import numpy as np
+
+    from mapgen.props import registry
+
+    rng = np.random.default_rng(42)
+    pm = registry.build("rock", {"radius": 0.5}, rng)
+    assert pm.material_id == "rock"
+    assert pm.tri_count <= 40
+    # base pivot: lowest vertex on the ground, centered in XY
+    assert abs(pm.verts[:, 2].min()) < 1e-6
+    assert abs(pm.verts[:, 0].mean()) < 0.2
+    # deterministic for a fixed seed
+    a = registry.build("rock", {"radius": 0.5}, np.random.default_rng(1))
+    b = registry.build("rock", {"radius": 0.5}, np.random.default_rng(1))
+    np.testing.assert_allclose(a.verts, b.verts)
