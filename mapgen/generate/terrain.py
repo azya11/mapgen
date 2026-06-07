@@ -91,11 +91,46 @@ def procedural(spec: SceneSpec, res: int, seed: int) -> Heightfield:
             shifted = _shift_field(fall, f.direction.value if f.direction else "center")
             height -= shifted * 90.0 * _SIZE_GAIN[f.relative_size]
             sea = float(np.percentile(height, 12)) if sea is None else sea
+        elif f.type in (FeatureType.river, FeatureType.water):
+            # Carve a meandering channel with a roughly *flat* bed so the single
+            # flat water plane reads as a continuous ribbon, even when the river
+            # runs through an otherwise sloped/canyon terrain (a sloped channel
+            # would only show water at its lowest point). The bed is set a fixed
+            # depth below the land the channel passes through.
+            channel = _river_channel(res, f.direction.value if f.direction else None)
+            depth = 28.0 * _SIZE_GAIN[f.relative_size]
+            band = channel > 0.15
+            ref = float(np.median(height[band])) if band.any() else float(np.median(height))
+            bed = ref - depth
+            # Pull channel cells down toward the flat bed (keep any ground that is
+            # already lower, e.g. a deep canyon floor, so we never raise terrain).
+            pulled = np.minimum(height, bed)
+            height = height * (1 - channel) + pulled * channel
+            river_level = bed + depth * 0.4
+            sea = river_level if sea is None else max(sea, river_level)
 
     if sea is not None:
         sea = max(sea, float(height.min()) + 1.0)
 
     return Heightfield(z=height, size_m=size_m, sea_level=sea)
+
+
+def _river_channel(res: int, direction: str | None) -> np.ndarray:
+    """A 0..1 field that peaks (→1) inside a meandering channel and falls to 0
+    on the banks. The channel runs across the tile; a N/S or E/W direction
+    orients it, otherwise it meanders east–west. Deterministic for a given res."""
+    lin = np.linspace(-1.0, 1.0, res)
+    gx, gy = np.meshgrid(lin, lin, indexing="ij")  # gx east, gy north
+    # Orient the flow axis: rivers tied to an east/west direction run N–S, and
+    # vice versa, so the channel crosses the side it is associated with.
+    if direction in ("east", "west"):
+        along, across = gy, gx
+    else:
+        along, across = gx, gy
+    meander = 0.22 * np.sin(along * np.pi * 1.5)
+    dist = np.abs(across - meander)
+    width = 0.11
+    return np.exp(-(dist / width) ** 2)
 
 
 def _shift_field(field: np.ndarray, direction: str) -> np.ndarray:

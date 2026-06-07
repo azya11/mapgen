@@ -39,7 +39,8 @@ _FEATURE_WORDS = {
     FeatureType.forest: ["forest", "woods", "woodland", "trees", "jungle"],
     FeatureType.park: ["park", "garden"],
     FeatureType.desert: ["desert", "dunes", "sand"],
-    FeatureType.district: ["downtown", "district", "neighbourhood", "neighborhood", "suburb"],
+    FeatureType.district: ["downtown", "district", "neighbourhood", "neighborhood", "suburb",
+                           "village", "villages", "town", "hamlet", "settlement"],
     FeatureType.building: ["building", "skyscraper", "tower", "house", "houses"],
     FeatureType.road: ["road", "roads", "street", "streets", "highway", "avenue"],
     FeatureType.landmark: ["landmark", "monument", "cathedral", "castle", "bridge"],
@@ -190,9 +191,18 @@ class RuleParser(Parser):
         if "range" in low or "region" in low:
             return 40.0
         if style == MapStyle.city or "city" in low:
-            return 12.0
-        if "town" in low or "village" in low:
+            # Compact by default so a fictional city reads as built-up rather
+            # than a handful of blocks lost in open ground; "dense"/"sparse"
+            # nudge the modelled coverage (and therefore the visible density).
+            if "dense" in low:
+                return 3.0
+            if "sparse" in low:
+                return 8.0
             return 5.0
+        if "hamlet" in low or "village" in low:
+            return 2.5
+        if "town" in low:
+            return 4.0
         return 2.0
 
     def _features(self, low: str) -> list[GeoFeature]:

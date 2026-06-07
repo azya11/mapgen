@@ -126,6 +126,23 @@ def _blend(a, b, t):
     return a[None, None] * (1 - t[..., None]) + b[None, None] * t[..., None]
 
 
+def _ensure_normals(mesh: trimesh.Trimesh, crisp: bool = False) -> trimesh.Trimesh:
+    """Compute and cache vertex normals so the exporters emit a NORMAL accessor.
+
+    Without normals in the file, game engines and DCC tools (Unity, Unreal,
+    Godot, Blender) import the mesh flat-/black-shaded or have to regenerate
+    normals themselves — the exported model is the product here, so it must
+    carry them. `crisp` unmerges shared vertices first so faceted geometry
+    (buildings) keeps hard edges instead of being smoothed into blobs; smooth
+    surfaces (terrain) keep shared vertices so hills shade continuously."""
+    if crisp:
+        mesh.unmerge_vertices()
+    # Accessing the property triggers the (cached) computation that the GLB/OBJ
+    # exporters then pick up.
+    _ = mesh.vertex_normals
+    return mesh
+
+
 def _water_plane(hf: Heightfield, style: MapStyle) -> trimesh.Trimesh | None:
     if hf.sea_level is None:
         return None
@@ -173,6 +190,7 @@ def build_scene(
     verts, faces = terr.heightfield_to_mesh(hf)
     ground = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
     ground.visual.vertex_colors = _terrain_colors(hf, spec.map_style)
+    _ensure_normals(ground)  # smooth normals so the file shades correctly
 
     scene = trimesh.Scene()
     scene.add_geometry(ground, geom_name="terrain")
@@ -186,6 +204,7 @@ def build_scene(
     # ---- water ----
     water = _water_plane(hf, spec.map_style)
     if water is not None:
+        _ensure_normals(water)
         scene.add_geometry(water, geom_name="water")
         stats["water"] = True
 
@@ -204,6 +223,9 @@ def build_scene(
             stats["buildings_source"] = "procedural"
 
     if building_mesh is not None:
+        # Unmerge first so each facet keeps a hard edge (crisp walls/roofs) and
+        # its own flat colour, then grade and compute per-face normals.
+        _ensure_normals(building_mesh, crisp=True)
         b_rgb = _style(spec.map_style)["building"]
         building_mesh.visual.face_colors = _building_colors(building_mesh, b_rgb)
         scene.add_geometry(building_mesh, geom_name="buildings")
@@ -211,6 +233,7 @@ def build_scene(
     # ---- vegetation (procedural forests/parks) ----
     forest_mesh = veg.forests(spec, hf, config.seed)
     if forest_mesh is not None:
+        _ensure_normals(forest_mesh)
         scene.add_geometry(forest_mesh, geom_name="vegetation")
         stats["trees"] = int(len(forest_mesh.vertices) // 30)  # rough count
 

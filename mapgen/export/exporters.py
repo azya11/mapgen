@@ -26,12 +26,15 @@ def export_all(
         fmt = fmt.lower()
         if fmt == "glb":
             p = out_dir / f"{basename}.glb"
-            scene.export(p.as_posix())
+            # include_normals=True forces the NORMAL accessor into the file so
+            # downstream engines/DCC tools don't import flat-shaded geometry.
+            scene.export(p.as_posix(), include_normals=True)
             written["glb"] = str(p)
         elif fmt == "obj":
             p = out_dir / f"{basename}.obj"
-            # trimesh writes a sibling .mtl for the materials automatically.
-            scene.export(p.as_posix())
+            # trimesh writes a sibling .mtl for the materials automatically;
+            # include_normals=True emits `vn` lines so the OBJ shades correctly.
+            scene.export(p.as_posix(), include_normals=True)
             written["obj"] = str(p)
         elif fmt == "stl":
             p = out_dir / f"{basename}.stl"
