@@ -403,33 +403,19 @@ def from_trimesh(mesh, material_id: str) -> PropMesh:
     return PropMesh(verts=verts, faces=faces, material_id=material_id)
 ```
 
-Create `mapgen/props/__init__.py`:
+Create `mapgen/props/__init__.py` (minimal for now — Task 4 expands it to export the registry + trigger generator registration):
 
 ```python
-"""Procedural prop generators. Importing this package registers every generator.
-
-The AI never produces geometry: it emits PropIntents naming a generator key +
-params; code here owns every vertex, so output is low-poly and deterministic.
-"""
+"""Procedural prop generators. The AI never produces geometry: it emits
+PropIntents naming a generator key + params; code here owns every vertex,
+so output is low-poly and deterministic."""
 
 from .base import PropMesh, from_trimesh
-from .registry import GeneratorEntry, all_keys, build, get, register
 
-# Import the generator modules for their registration side effects.
-from . import generators  # noqa: E402,F401
-
-__all__ = [
-    "PropMesh",
-    "from_trimesh",
-    "GeneratorEntry",
-    "register",
-    "get",
-    "all_keys",
-    "build",
-]
+__all__ = ["PropMesh", "from_trimesh"]
 ```
 
-> `mapgen/props/registry.py` and `mapgen/props/generators/` do not exist yet, so the package import line will fail until Task 4. The unit test above imports `mapgen.props.base` directly, which works now.
+> Importing `mapgen.props.base` executes `mapgen/props/__init__.py` first, so the package init must not reference `registry`/`generators` yet (they arrive in Task 4). Keeping it base-only here lets the Task 3 test collect and pass.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -585,6 +571,26 @@ Create `mapgen/props/generators/__init__.py`:
 """Importing this package registers every built-in generator."""
 
 from . import barrel, cottage, rock, tree  # noqa: F401
+```
+
+Then expand `mapgen/props/__init__.py` (Task 3 left it base-only) to the full version that exports the registry API and triggers generator registration:
+
+```python
+"""Procedural prop generators. Importing this package registers every generator.
+
+The AI never produces geometry: it emits PropIntents naming a generator key +
+params; code here owns every vertex, so output is low-poly and deterministic."""
+
+from .base import PropMesh, from_trimesh
+from .registry import GeneratorEntry, all_keys, build, get, register
+
+# Import the generator modules for their registration side effects.
+from . import generators  # noqa: E402,F401
+
+__all__ = [
+    "PropMesh", "from_trimesh", "GeneratorEntry",
+    "register", "get", "all_keys", "build",
+]
 ```
 
 > `rock`, `tree`, `barrel`, `cottage` modules are created in Tasks 5–8. Until then, import will fail. To keep the suite green between tasks, create empty placeholder modules now:
