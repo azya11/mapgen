@@ -62,6 +62,7 @@ def test_registry_register_build_and_budget():
 
 
 def test_registry_enforces_poly_budget():
+
     import numpy as np
     import pytest
     from pydantic import BaseModel
@@ -98,3 +99,20 @@ def test_rock_generator():
     a = registry.build("rock", {"radius": 0.5}, np.random.default_rng(1))
     b = registry.build("rock", {"radius": 0.5}, np.random.default_rng(1))
     np.testing.assert_allclose(a.verts, b.verts)
+
+
+def test_tree_generators():
+    import numpy as np
+
+    from mapgen.props import registry
+
+    conifer = registry.build("tree.conifer", {"height": 4.0}, np.random.default_rng(3))
+    assert conifer.material_id == "foliage"
+    assert conifer.tri_count <= 60
+    assert abs(conifer.verts[:, 2].min()) < 1e-6
+    assert conifer.verts[:, 2].max() <= 4.0 + 1e-6  # honors height
+
+    broadleaf = registry.build("tree.broadleaf", {"height": 5.0}, np.random.default_rng(3))
+    assert broadleaf.material_id == "foliage"
+    assert broadleaf.tri_count <= 120
+    assert abs(broadleaf.verts[:, 2].min()) < 1e-6
