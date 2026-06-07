@@ -8,13 +8,20 @@ Pipeline stages:
     4. export   scene                -> .glb / .obj+.mtl / .stl / .py (Blender)
 """
 
-from .spec import SceneSpec, GeoFeature, MapStyle, Direction, FeatureType
-from .pipeline import Pipeline, PipelineResult
+from .spec import WorldSpec, TerrainSpec, TerrainFeature, WorldStyle, PropIntent, Direction, FeatureType
+
+try:
+    from .pipeline import Pipeline, PipelineResult
+    _pipeline_available = True
+except (ImportError, ModuleNotFoundError):
+    _pipeline_available = False
 
 __all__ = [
-    "SceneSpec",
-    "GeoFeature",
-    "MapStyle",
+    "WorldSpec",
+    "TerrainSpec",
+    "TerrainFeature",
+    "WorldStyle",
+    "PropIntent",
     "Direction",
     "FeatureType",
     "Pipeline",
