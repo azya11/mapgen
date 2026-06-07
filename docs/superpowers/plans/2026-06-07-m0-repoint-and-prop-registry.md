@@ -220,6 +220,14 @@ class Size(str, Enum):
     large = "large"
 
 
+class Density(str, Enum):
+    """How thickly a prop intent scatters across its region (placement, M2)."""
+
+    sparse = "sparse"
+    medium = "medium"
+    dense = "dense"
+
+
 class TerrainFeature(BaseModel):
     """One relief element of the world (a hill to the north, a lake, etc.)."""
 
@@ -267,7 +275,7 @@ class PropIntent(BaseModel):
         default="scatter",
         description="A compass direction, 'scatter', 'edge', or 'cluster'.",
     )
-    density: Size = Field(default=Size.medium)
+    density: Density = Field(default=Density.medium)
     params: dict = Field(default_factory=dict)
     on: Literal["ground", "water"] = "ground"
 
@@ -1496,7 +1504,7 @@ def _build_tool() -> dict:
                             "region": {"type": "string"},
                             "density": {
                                 "type": "string",
-                                "enum": ["small", "medium", "large"],
+                                "enum": ["sparse", "medium", "dense"],
                             },
                             "params": {"type": "object"},
                             "on": {"type": "string", "enum": ["ground", "water"]},
