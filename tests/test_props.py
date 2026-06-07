@@ -28,3 +28,55 @@ def test_from_trimesh_recenters_to_base_pivot():
     assert abs(pm.verts[:, 1].mean()) < 1e-6
     assert abs(pm.verts[:, 2].min()) < 1e-6
     assert pm.material_id == "wood"
+
+
+def test_registry_register_build_and_budget():
+    import numpy as np
+    import pytest
+    from pydantic import BaseModel
+
+    from mapgen.props import registry
+    from mapgen.props.base import PropMesh
+
+    class _P(BaseModel):
+        size: float = 1.0
+
+    @registry.register("test.tri", params_model=_P, poly_budget=2)
+    def _tri(p: _P, rng) -> PropMesh:
+        v = np.array([[0, 0, 0], [p.size, 0, 0], [0, p.size, 0]], float)
+        f = np.array([[0, 1, 2]], int)
+        return PropMesh(verts=v, faces=f, material_id="rock")
+
+    assert "test.tri" in registry.all_keys()
+    pm = registry.build("test.tri", {"size": 2.0}, np.random.default_rng(0))
+    assert pm.tri_count == 1
+    assert pm.bbox[1][0] == 2.0
+
+    # unknown key → KeyError
+    with pytest.raises(KeyError):
+        registry.build("nope", {}, np.random.default_rng(0))
+
+    # bad params → validation error
+    with pytest.raises(Exception):
+        registry.build("test.tri", {"size": "huge"}, np.random.default_rng(0))
+
+
+def test_registry_enforces_poly_budget():
+    import numpy as np
+    import pytest
+    from pydantic import BaseModel
+
+    from mapgen.props import registry
+    from mapgen.props.base import PropMesh
+
+    class _P(BaseModel):
+        pass
+
+    @registry.register("test.toomany", params_model=_P, poly_budget=1)
+    def _big(p, rng) -> PropMesh:
+        v = np.zeros((6, 3))
+        f = np.array([[0, 1, 2], [3, 4, 5]], int)
+        return PropMesh(verts=v, faces=f, material_id="rock")
+
+    with pytest.raises(ValueError, match="poly budget"):
+        registry.build("test.toomany", {}, np.random.default_rng(0))
