@@ -116,3 +116,19 @@ def test_tree_generators():
     assert broadleaf.material_id == "foliage"
     assert broadleaf.tri_count <= 120
     assert abs(broadleaf.verts[:, 2].min()) < 1e-6
+
+
+def test_barrel_generator():
+    import numpy as np
+    import trimesh
+
+    from mapgen.props import registry
+
+    pm = registry.build("barrel", {"height": 1.0, "radius": 0.35}, np.random.default_rng(9))
+    assert pm.material_id == "wood"
+    assert pm.tri_count <= 60
+    assert abs(pm.verts[:, 2].min()) < 1e-6
+    assert pm.verts[:, 2].max() <= 1.0 + 1e-6
+    # watertight: a barrel is a closed solid
+    tm = trimesh.Trimesh(vertices=pm.verts, faces=pm.faces, process=False)
+    assert tm.is_watertight
