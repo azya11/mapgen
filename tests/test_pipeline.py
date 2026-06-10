@@ -108,3 +108,30 @@ def test_determinism_same_seed_same_geometry():
     ga = a.build.scene.geometry["terrain"]
     gb = b.build.scene.geometry["terrain"]
     np.testing.assert_allclose(ga.vertices, gb.vertices)
+
+
+def test_determinism_across_processes():
+    """Seed determinism must hold ACROSS processes — guards against PYTHONHASHSEED
+    salting per-feature seed offsets (an in-process test can't catch that because
+    hash() is stable within one interpreter). Exercises the mountain path, where
+    the per-feature seed offset is applied."""
+    import subprocess
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    code = (
+        "import numpy as np, tempfile;"
+        "from mapgen import Pipeline; from mapgen.config import Config;"
+        "c=Config(); c.parser_backend='rule'; c.terrain_resolution=48;"
+        "r=Pipeline(config=c).run('a fantasy mountain to the north',"
+        " out_dir=tempfile.mkdtemp(), formats=['glb'], basename='t');"
+        "v=r.build.scene.geometry['terrain'].vertices;"
+        "print(round(float(np.abs(v).sum()), 3))"
+    )
+    outs = []
+    for hashseed in ("0", "1"):
+        env = dict(os.environ, PYTHONHASHSEED=hashseed)
+        out = subprocess.check_output(
+            [sys.executable, "-c", code], env=env, cwd=repo_root
+        ).decode().strip()
+        outs.append(out)
+    assert outs[0] == outs[1], f"non-deterministic across PYTHONHASHSEED: {outs}"

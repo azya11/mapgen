@@ -130,6 +130,7 @@ def test_tree_generators():
     assert broadleaf.material_id == "foliage"
     assert broadleaf.tri_count <= 120
     assert abs(broadleaf.verts[:, 2].min()) < 1e-6
+    assert broadleaf.verts[:, 2].max() <= 5.0 + 1e-6  # canopy honors height
 
 
 def test_barrel_generator():

@@ -10,7 +10,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Direction(str, Enum):
@@ -117,6 +117,11 @@ class PropIntent(BaseModel):
 
 class WorldSpec(BaseModel):
     """Fully validated description of a procedural world. Produced by a Parser."""
+
+    # Validate on attribute assignment too, so pipeline/CLI overrides
+    # (spec.extent_m = ..., spec.world_style = ...) are checked and coerced,
+    # not silently accepted out of range / as a bare string.
+    model_config = ConfigDict(validate_assignment=True)
 
     name: str = Field(default="world", description="Output basename / world name.")
     world_style: WorldStyle = WorldStyle.lowpoly_nature

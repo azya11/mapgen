@@ -58,7 +58,13 @@ def procedural(spec: WorldSpec, res: int, seed: int) -> Heightfield:
 
     for f in mountains:
         ramp = noise.directional_ramp(res, f.direction.value if f.direction else "center")
-        peak_noise = noise.fbm(res, seed + 700 + hash(f.type) % 100, octaves=5, base_cells=5)
+        # Stable per-type seed offset (enum ordinal, not hash(): builtin hash of
+        # str-enums is salted by PYTHONHASHSEED and would break cross-process
+        # determinism — the seed/determinism contract the generator promises).
+        peak_noise = noise.fbm(
+            res, seed + 700 + list(FeatureType).index(f.type) * 13,
+            octaves=5, base_cells=5,
+        )
         amp = (900.0 if f.type == FeatureType.mountain else 220.0) * _SIZE_GAIN[f.relative_size]
         height += ramp**1.6 * peak_noise * amp * style_gain
 
