@@ -2,10 +2,24 @@ import os
 import sys
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from mapgen.props.base import PropMesh, from_trimesh
+
+
+@pytest.fixture(autouse=True)
+def _isolate_registry():
+    """Remove any throwaway generators a test registers, so the global registry
+    stays clean for order-dependent tests in other modules (e.g. the tool-schema
+    contract test that asserts the generator enum equals the real registry keys)."""
+    from mapgen.props import registry
+
+    before = set(registry._REGISTRY)
+    yield
+    for key in set(registry._REGISTRY) - before:
+        registry._REGISTRY.pop(key, None)
 
 
 def test_propmesh_counts_and_bbox():
