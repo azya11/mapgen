@@ -15,7 +15,7 @@ Optional env:
   ALLOWED_ORIGINS   comma-separated browser origins for CORS (default "*").
   WORKER_OUTPUTS    output dir (default /tmp/mapgen-out).
   WORKER_TIMEOUT_S  hard per-job timeout (default 210).
-  WORKER_GEN_RESOLUTION, WORKER_MAX_EXTENT_KM, WORKER_CONCURRENCY
+  WORKER_GEN_RESOLUTION, WORKER_MAX_EXTENT_M, WORKER_CONCURRENCY
   ANTHROPIC_API_KEY optional, enables the Claude parser.
 """
 
@@ -39,7 +39,7 @@ OUTPUTS = Path(os.environ.get("WORKER_OUTPUTS", "/tmp/mapgen-out"))
 OUTPUTS.mkdir(parents=True, exist_ok=True)
 TIMEOUT_S = int(os.environ.get("WORKER_TIMEOUT_S", "210"))
 GEN_RESOLUTION = int(os.environ.get("WORKER_GEN_RESOLUTION", "80"))
-MAX_EXTENT_KM = float(os.environ.get("WORKER_MAX_EXTENT_KM", "6"))
+MAX_EXTENT_M = float(os.environ.get("WORKER_MAX_EXTENT_M", "6000"))
 CONCURRENCY = int(os.environ.get("WORKER_CONCURRENCY", "2"))
 FORMATS = ("glb", "obj", "stl")
 
@@ -60,21 +60,18 @@ app.add_middleware(
 
 
 # ------------------------------------------------------------- generation ---
-def _run_sync(prompt: str, gen_id: str, use_real: bool, extent_km: float) -> dict:
+def _run_sync(prompt: str, gen_id: str, extent_m: float) -> dict:
     from mapgen import Pipeline
     from mapgen.config import Config
 
     cfg = Config.from_env()
     cfg.terrain_resolution = GEN_RESOLUTION
-    cfg.use_network = use_real
     cfg.parser_backend = "auto"  # Claude if ANTHROPIC_API_KEY is set, else rule
 
     pipe = Pipeline(config=cfg)
     overrides = {
-        "extent_km": min(max(extent_km, 0.5), MAX_EXTENT_KM),
-        # A "1:N" scale ratio in the prompt may override extent_km; cap it here.
-        "max_extent_km": MAX_EXTENT_KM,
-        "force_real": None if use_real else False,
+        "extent_m": min(max(extent_m, 50.0), MAX_EXTENT_M),
+        "max_extent_m": MAX_EXTENT_M,
     }
     result = pipe.run(
         prompt, out_dir=OUTPUTS / gen_id, formats=list(FORMATS),
@@ -84,13 +81,9 @@ def _run_sync(prompt: str, gen_id: str, use_real: bool, extent_km: float) -> dic
     return {
         "id": gen_id,
         "files": files,
-        "location": result.spec.location,
-        "is_real": result.spec.is_real_location,
-        "used_real_data": result.build.used_real_data,
-        "style": result.spec.map_style.value,
-        "extent_km": result.spec.extent_km,
-        "lat": result.lat,
-        "lon": result.lon,
+        "name": result.spec.name,
+        "style": result.spec.world_style.value,
+        "extent_m": result.spec.extent_m,
         "stats": result.build.stats,
         "features": result._feat(),
     }
@@ -120,14 +113,13 @@ async def generate(request: Request):
 
     gen_id = data["gid"]
     prompt = str(data.get("prompt", ""))[:400]
-    use_real = bool(data.get("use_real", True))
-    extent_km = float(data.get("extent_km", 4.0))
+    extent_m = float(data.get("extent_m", 400.0))
 
     async with _semaphore:
         loop = asyncio.get_running_loop()
         try:
             result = await asyncio.wait_for(
-                loop.run_in_executor(None, _run_sync, prompt, gen_id, use_real, extent_km),
+                loop.run_in_executor(None, _run_sync, prompt, gen_id, extent_m),
                 timeout=TIMEOUT_S,
             )
         except asyncio.TimeoutError:

@@ -74,8 +74,8 @@ class Settings:
     LOCKOUT_MINUTES = 15
 
     # generation limits
-    GEN_MAX_EXTENT_KM = 6.0
-    GEN_DEFAULT_EXTENT_KM = 4.0
+    GEN_MAX_EXTENT_M = 6000.0
+    GEN_DEFAULT_EXTENT_M = 400.0
     GEN_RESOLUTION = int(os.environ.get("WEB_GEN_RESOLUTION", "80"))
     GEN_TIMEOUT_S = int(os.environ.get("WEB_GEN_TIMEOUT_S", "210"))
     GEN_CONCURRENCY = 2

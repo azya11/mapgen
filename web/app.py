@@ -126,8 +126,7 @@ class Credentials(BaseModel):
 
 class GenerateBody(BaseModel):
     prompt: str = Field(min_length=1, max_length=400)
-    use_real: bool = True
-    extent_km: float = Field(default=settings.GEN_DEFAULT_EXTENT_KM, ge=0.5, le=settings.GEN_MAX_EXTENT_KM)
+    extent_m: float = Field(default=settings.GEN_DEFAULT_EXTENT_M, ge=50.0, le=settings.GEN_MAX_EXTENT_M)
 
 
 # ------------------------------------------------------------------ routes ---
@@ -311,7 +310,7 @@ def _register_routes(app: FastAPI) -> None:
             db.commit()
             ticket = issue_ticket({
                 "uid": user.id, "gid": gen_id, "prompt": prompt,
-                "use_real": body.use_real, "extent_km": body.extent_km,
+                "extent_m": body.extent_m,
             })
             fresh = db.get(User, user.id)
             return JSONResponse({
@@ -326,7 +325,7 @@ def _register_routes(app: FastAPI) -> None:
 
         # ---- local mode: run the pipeline in-process ----
         try:
-            result = await run_generation(prompt, body.use_real, body.extent_km)
+            result = await run_generation(prompt, body.extent_m)
         except Exception as e:
             # refund on failure
             fresh = db.get(User, user.id)
@@ -337,8 +336,8 @@ def _register_routes(app: FastAPI) -> None:
 
         db.add(Generation(
             id=result["id"], user_id=user.id, prompt=prompt,
-            location=str(result.get("location", ""))[:256],
-            used_real=bool(result.get("used_real_data")), pending=False,
+            location=str(result.get("name", ""))[:256],
+            used_real=False, pending=False,
         ))
         db.commit()
 
@@ -374,8 +373,8 @@ def _register_routes(app: FastAPI) -> None:
         if gen.pending:  # idempotent: only act on a still-pending reservation
             if ok:
                 meta = data.get("metadata") or {}
-                gen.location = str(meta.get("location", ""))[:256]
-                gen.used_real = bool(meta.get("used_real_data"))
+                gen.location = str(meta.get("name", ""))[:256]
+                gen.used_real = False
                 gen.pending = False
             else:
                 db.delete(gen)
