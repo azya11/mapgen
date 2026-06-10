@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..spec import FeatureType, GeoFeature, MapStyle, SceneSpec, Size
+from ..spec import FeatureType, TerrainFeature, WorldSpec, WorldStyle, Size
 from . import noise
 
 
@@ -34,40 +34,27 @@ class Heightfield:
 _SIZE_GAIN = {Size.small: 0.45, Size.medium: 1.0, Size.large: 1.9}
 
 
-def from_elevation(grid: np.ndarray, size_m: float, spec: SceneSpec) -> Heightfield:
-    """Wrap a real elevation grid. Sets a sea level if the scene implies water
-    and the data actually dips near/below zero."""
-    z = grid.astype(float).copy()
-    sea = None
-    if spec.has_water:
-        # Use a low percentile as waterline if terrain approaches sea level.
-        lo = np.percentile(z, 8)
-        if lo <= 5.0 or z.min() <= 0.5:
-            sea = max(0.0, float(np.percentile(z, 5)))
-    return Heightfield(z=z, size_m=size_m, sea_level=sea)
-
-
-def procedural(spec: SceneSpec, res: int, seed: int) -> Heightfield:
+def procedural(spec: WorldSpec, res: int, seed: int) -> Heightfield:
     """Build a heightfield from the parsed features alone (no real data)."""
-    size_m = spec.extent_km * 1000.0
+    size_m = spec.extent_m
 
     base = noise.fbm(res, seed, octaves=6, base_cells=3)
     height = base * 60.0  # gentle rolling base, metres
 
-    mountains = spec.features_of(FeatureType.mountain, FeatureType.hill)
-    valleys = spec.features_of(FeatureType.valley)
-    waters = spec.features_of(
+    mountains = spec.terrain.features_of(FeatureType.mountain, FeatureType.hill)
+    valleys = spec.terrain.features_of(FeatureType.valley)
+    waters = spec.terrain.features_of(
         FeatureType.water, FeatureType.lake, FeatureType.sea,
         FeatureType.river, FeatureType.coast,
     )
 
     # Relief amplitude scales with style.
     style_gain = {
-        MapStyle.fantasy: 2.2, MapStyle.topographic: 1.5,
-        MapStyle.terrain: 1.0, MapStyle.city: 0.35,
-        MapStyle.schematic: 0.5, MapStyle.satellite: 1.0,
-        MapStyle.minimal: 0.7,
-    }.get(spec.map_style, 1.0)
+        WorldStyle.fantasy: 2.2, WorldStyle.alpine: 1.6,
+        WorldStyle.lowpoly_nature: 1.0, WorldStyle.urban: 0.35,
+        WorldStyle.schematic: 0.5, WorldStyle.desert: 0.8,
+        WorldStyle.minimal: 0.7,
+    }.get(spec.world_style, 1.0)
 
     for f in mountains:
         ramp = noise.directional_ramp(res, f.direction.value if f.direction else "center")

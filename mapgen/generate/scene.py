@@ -1,5 +1,5 @@
-"""Assemble the final trimesh.Scene from terrain + water + buildings, applying
-a colour palette chosen by the map style. The result is renderer-agnostic and
+"""Assemble the final trimesh.Scene from terrain + water, applying a colour
+palette chosen by the world style. The result is renderer-agnostic and
 exported by the export layer."""
 
 from __future__ import annotations
@@ -10,12 +10,8 @@ import numpy as np
 import trimesh
 
 from ..config import Config
-from ..geo.geocode import BBox
-from ..geo.osm import OSMData
-from ..spec import MapStyle, SceneSpec
-from . import buildings as bld
+from ..spec import WorldSpec, WorldStyle
 from . import terrain as terr
-from . import vegetation as veg
 from .terrain import Heightfield
 
 
@@ -23,7 +19,6 @@ from .terrain import Heightfield
 class SceneBuildResult:
     scene: trimesh.Scene
     heightfield: Heightfield
-    used_real_data: bool
     stats: dict = field(default_factory=dict)
 
 
@@ -40,23 +35,23 @@ _C = {
     "building":(206, 205, 200),
 }
 
-# Per-style water + building base colours and a relief feel.
+# Per-style water colours and a relief feel.
 _STYLE = {
-    MapStyle.terrain:     dict(building=(208, 206, 200), water=(54, 104, 150)),
-    MapStyle.topographic: dict(building=(214, 214, 214), water=(70, 120, 170), contours=True),
-    MapStyle.satellite:   dict(building=(168, 166, 160), water=(40, 86, 132)),
-    MapStyle.city:        dict(building=(224, 226, 230), water=(70, 110, 150)),
-    MapStyle.schematic:   dict(building=(124, 134, 150), water=(170, 205, 235), flat=True),
-    MapStyle.fantasy:     dict(building=(186, 166, 134), water=(40, 110, 150), vivid=True),
-    MapStyle.minimal:     dict(building=(165, 165, 165), water=(185, 195, 205), gray=True),
+    WorldStyle.lowpoly_nature: dict(water=(54, 104, 150)),
+    WorldStyle.alpine:         dict(water=(70, 120, 170), contours=True),
+    WorldStyle.urban:          dict(water=(70, 110, 150)),
+    WorldStyle.desert:         dict(water=(40, 86, 132)),
+    WorldStyle.schematic:      dict(water=(170, 205, 235), flat=True),
+    WorldStyle.fantasy:        dict(water=(40, 110, 150), vivid=True),
+    WorldStyle.minimal:        dict(water=(185, 195, 205), gray=True),
 }
 
 
-def _style(style: MapStyle) -> dict:
-    return _STYLE.get(style, _STYLE[MapStyle.terrain])
+def _style(style: WorldStyle) -> dict:
+    return _STYLE.get(style, _STYLE[WorldStyle.lowpoly_nature])
 
 
-def _terrain_colors(hf: Heightfield, style: MapStyle) -> np.ndarray:
+def _terrain_colors(hf: Heightfield, style: WorldStyle) -> np.ndarray:
     """Natural elevation/slope-based albedo: beach near water, grass on gentle
     low land, rock on steep/high ground, snow on high gentle peaks, with optional
     contour banding for topographic and flat/gray treatments for other styles."""
@@ -143,7 +138,7 @@ def _ensure_normals(mesh: trimesh.Trimesh, crisp: bool = False) -> trimesh.Trime
     return mesh
 
 
-def _water_plane(hf: Heightfield, style: MapStyle) -> trimesh.Trimesh | None:
+def _water_plane(hf: Heightfield, style: WorldStyle) -> trimesh.Trimesh | None:
     if hf.sea_level is None:
         return None
     plane = trimesh.creation.box(extents=[hf.size_m * 1.04, hf.size_m * 1.04, 0.1])
@@ -153,44 +148,14 @@ def _water_plane(hf: Heightfield, style: MapStyle) -> trimesh.Trimesh | None:
     return plane
 
 
-def _building_colors(mesh: trimesh.Trimesh, base_rgb) -> np.ndarray:
-    """Grade building faces by height so roofs read lighter than walls, with a
-    little per-face jitter so a dense city isn't one flat slab of colour."""
-    base = np.array(base_rgb, float)
-    zc = mesh.triangles_center[:, 2]
-    z0, z1 = float(zc.min()), float(zc.max())
-    t = (zc - z0) / max(z1 - z0, 1e-6)
-    shade = (0.78 + 0.32 * t)[:, None]          # taller -> lighter
-    rng = np.random.default_rng(12345)
-    jitter = rng.uniform(-10, 10, (len(zc), 1))
-    cols = np.clip(base[None, :] * shade + jitter, 30, 255)
-    rgba = np.empty((len(zc), 4))
-    rgba[:, :3] = cols
-    rgba[:, 3] = 255
-    return rgba.astype(np.uint8)
-
-
-def build_scene(
-    spec: SceneSpec,
-    config: Config,
-    bbox: BBox | None,
-    elevation: np.ndarray | None,
-    osm: OSMData | None,
-) -> SceneBuildResult:
+def build_scene(spec: WorldSpec, config: Config) -> SceneBuildResult:
     res = config.terrain_resolution
-    used_real = False
-
-    # ---- terrain heightfield ----
-    if elevation is not None and bbox is not None:
-        hf = terr.from_elevation(elevation, bbox.extent_km * 1000.0, spec)
-        used_real = True
-    else:
-        hf = terr.procedural(spec, res, config.seed)
+    hf = terr.procedural(spec, res, spec.seed)
 
     verts, faces = terr.heightfield_to_mesh(hf)
     ground = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
-    ground.visual.vertex_colors = _terrain_colors(hf, spec.map_style)
-    _ensure_normals(ground)  # smooth normals so the file shades correctly
+    ground.visual.vertex_colors = _terrain_colors(hf, spec.world_style)
+    _ensure_normals(ground)
 
     scene = trimesh.Scene()
     scene.add_geometry(ground, geom_name="terrain")
@@ -199,44 +164,13 @@ def build_scene(
         "terrain_vertices": int(len(verts)),
         "terrain_faces": int(len(faces)),
         "relief_m": round(hf.relief, 1),
+        "prop_intents": len(spec.props),  # placement lands props in M2
     }
 
-    # ---- water ----
-    water = _water_plane(hf, spec.map_style)
+    water = _water_plane(hf, spec.world_style)
     if water is not None:
         _ensure_normals(water)
         scene.add_geometry(water, geom_name="water")
         stats["water"] = True
 
-    # ---- buildings ----
-    building_mesh = None
-    if osm is not None and bbox is not None and osm.buildings:
-        building_mesh = bld.from_osm(osm, bbox, hf)
-        if building_mesh is not None:
-            stats["buildings_source"] = "osm"
-            stats["building_count"] = len(osm.buildings)
-            if osm.fetched_extent_km and osm.fetched_extent_km < spec.extent_km - 0.05:
-                stats["buildings_extent_km"] = round(osm.fetched_extent_km, 1)
-    if building_mesh is None:
-        building_mesh = bld.procedural(spec, hf, config.seed)
-        if building_mesh is not None:
-            stats["buildings_source"] = "procedural"
-
-    if building_mesh is not None:
-        # Unmerge first so each facet keeps a hard edge (crisp walls/roofs) and
-        # its own flat colour, then grade and compute per-face normals.
-        _ensure_normals(building_mesh, crisp=True)
-        b_rgb = _style(spec.map_style)["building"]
-        building_mesh.visual.face_colors = _building_colors(building_mesh, b_rgb)
-        scene.add_geometry(building_mesh, geom_name="buildings")
-
-    # ---- vegetation (procedural forests/parks) ----
-    forest_mesh = veg.forests(spec, hf, config.seed)
-    if forest_mesh is not None:
-        _ensure_normals(forest_mesh)
-        scene.add_geometry(forest_mesh, geom_name="vegetation")
-        stats["trees"] = int(len(forest_mesh.vertices) // 30)  # rough count
-
-    return SceneBuildResult(
-        scene=scene, heightfield=hf, used_real_data=used_real, stats=stats
-    )
+    return SceneBuildResult(scene=scene, heightfield=hf, stats=stats)
