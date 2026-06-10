@@ -132,3 +132,22 @@ def test_barrel_generator():
     # watertight: a barrel is a closed solid
     tm = trimesh.Trimesh(vertices=pm.verts, faces=pm.faces, process=False)
     assert tm.is_watertight
+
+
+def test_cottage_generator():
+    import numpy as np
+
+    from mapgen.props import registry
+
+    pm = registry.build(
+        "house.cottage", {"width": 4.0, "depth": 3.0, "wall_h": 2.5}, np.random.default_rng(5)
+    )
+    assert pm.material_id == "building"
+    assert pm.tri_count <= 40
+    assert abs(pm.verts[:, 2].min()) < 1e-6
+    # footprint roughly matches requested width/depth
+    span = pm.bbox[1] - pm.bbox[0]
+    assert abs(span[0] - 4.0) < 1e-6
+    assert abs(span[1] - 3.0) < 1e-6
+    # has a peaked roof taller than the walls
+    assert pm.verts[:, 2].max() > 2.5
