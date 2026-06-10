@@ -2,9 +2,9 @@
 """Command-line entry point for the mapgen pipeline.
 
 Examples:
-    python cli.py "a coastal town near Nice with mountains to the north, terrain map"
-    python cli.py "downtown Manhattan, city map" --formats glb obj
-    python cli.py "a fantasy valley between two volcanoes" --offline --out renders
+    python cli.py "a fantasy valley with a lake, forest to the west"
+    python cli.py "desert canyon" --formats glb obj --resolution 48
+    python cli.py "snowy mountain pass" --parser rule --seed 42 --out renders
 """
 
 from __future__ import annotations
@@ -28,34 +28,22 @@ for _stream in (sys.stdout, sys.stderr):
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         prog="mapgen",
-        description="Turn a natural-language place description into 3D map files.",
+        description="Turn a natural-language description into a procedural 3D game world.",
     )
-    ap.add_argument("prompt", help="Description of the location, surroundings, and map type.")
+    ap.add_argument("prompt", help="Description of the world/level to generate.")
     ap.add_argument("--out", default="output", help="Output directory (default: output).")
-    ap.add_argument(
-        "--formats", nargs="+", default=["glb", "obj", "stl", "blender"],
-        metavar="FMT", help=f"Any of: {', '.join(FORMATS)}.",
-    )
-    ap.add_argument("--name", default=None, help="Output basename (default: from location).")
+    ap.add_argument("--formats", nargs="+", default=["glb", "obj", "stl"],
+                    metavar="FMT", help=f"Any of: {', '.join(FORMATS)}.")
+    ap.add_argument("--name", default=None, help="Output basename (default: from world name).")
     ap.add_argument("--parser", choices=["auto", "claude", "rule"], default=None,
                     help="Override parser backend (default: auto).")
     ap.add_argument("--model", default=None, help="Override Claude model id.")
-    ap.add_argument("--offline", action="store_true",
-                    help="Disable all network (rule parser + procedural geometry).")
     ap.add_argument("--resolution", type=int, default=None,
                     help="Terrain grid resolution per side (default 96).")
     ap.add_argument("--seed", type=int, default=None, help="Procedural seed.")
-    ap.add_argument("--json", action="store_true", help="Also print the SceneSpec as JSON.")
-    # --- explicit real-world overrides (win over prompt parsing) ---
-    ap.add_argument("--location", default=None, metavar="PLACE",
-                    help="Force a real place to geocode, e.g. --location \"Uralsk, Kazakhstan\". "
-                         "Implies real-world data.")
-    ap.add_argument("--real", dest="real", action="store_true", default=None,
-                    help="Force real-world data (geocode + OSM buildings + elevation).")
-    ap.add_argument("--procedural", dest="real", action="store_false",
-                    help="Force procedural generation, ignoring any real place.")
-    ap.add_argument("--extent", type=float, default=None, metavar="KM",
-                    help="Override the area side length in km (e.g. --extent 6).")
+    ap.add_argument("--json", action="store_true", help="Also print the WorldSpec as JSON.")
+    ap.add_argument("--extent", type=float, default=None, metavar="METERS",
+                    help="Override the world side length in meters.")
     args = ap.parse_args(argv)
 
     bad = [f for f in args.formats if f.lower() not in FORMATS]
@@ -67,10 +55,6 @@ def main(argv: list[str] | None = None) -> int:
         config.parser_backend = args.parser
     if args.model:
         config.model = args.model
-    if args.offline:
-        config.use_network = False
-        if config.parser_backend == "auto":
-            config.parser_backend = "rule"
     if args.resolution:
         config.terrain_resolution = args.resolution
     if args.seed is not None:
@@ -81,11 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     print(S.banner(), file=sys.stderr)
     pipe = Pipeline(config=config, log=lambda m: print(S.stage(m), file=sys.stderr))
 
-    overrides = {
-        "location": args.location,
-        "force_real": args.real,
-        "extent_km": args.extent,
-    }
+    overrides = {"extent_m": args.extent, "seed": args.seed}
     try:
         result = pipe.run(
             args.prompt, out_dir=args.out, formats=args.formats,
@@ -97,25 +77,22 @@ def main(argv: list[str] | None = None) -> int:
 
     print(_styled_summary(result, S))
     if args.json:
-        print(S.c("\nSceneSpec JSON:", S.VIOLET, bold=True))
+        print(S.c("\nWorldSpec JSON:", S.VIOLET, bold=True))
         print(S.DIM + result.spec.model_dump_json(indent=2) + S.RESET)
     return 0
 
 
 def _styled_summary(result, S) -> str:
-    """Render the run summary with the cyan→violet theme."""
+    """Render the run summary with the cyan->violet theme."""
     spec, build = result.spec, result.build
     bar = S.c("─" * 52, S.MUTED)
     rows = [
         ("Prompt", result.prompt),
-        ("Location", f"{spec.location}  ({'real' if spec.is_real_location else 'procedural'})"),
-        ("Style", f"{spec.map_style.value}   ·   extent {spec.extent_km} km"),
+        ("World", spec.name),
+        ("Style", f"{spec.world_style.value}   ·   extent {spec.extent_m} m"),
         ("Features", ", ".join(result._feat()) or "(none)"),
-        ("Terrain", "real elevation" if build.used_real_data else "procedural"),
-        ("Buildings", str(build.stats.get("buildings_source", "none"))),
+        ("Props", f"{sum(p.count for p in spec.props)} ({len(spec.props)} intents)"),
     ]
-    if build.stats.get("trees"):
-        rows.append(("Forest", f"{build.stats['trees']} trees"))
 
     out = ["", S.c("  ✦ scene generated", S.AQUA, bold=True), bar]
     for k, v in rows:

@@ -1,5 +1,4 @@
-"""Concrete exporters. trimesh handles GLB / OBJ / STL natively; the Blender
-script is generated from the scene so it can be rebuilt with Cycles materials."""
+"""Concrete exporters. trimesh handles GLB / OBJ / STL natively."""
 
 from __future__ import annotations
 
@@ -7,9 +6,7 @@ from pathlib import Path
 
 import trimesh
 
-from .blender import write_blender_script
-
-FORMATS = ("glb", "obj", "stl", "blender")
+FORMATS = ("glb", "obj", "stl")
 
 
 def export_all(
@@ -42,16 +39,6 @@ def export_all(
             mesh = _to_single_mesh(scene)
             mesh.export(p.as_posix())
             written["stl"] = str(p)
-        elif fmt == "blender":
-            p = out_dir / f"{basename}_blender.py"
-            glb = written.get("glb")
-            if glb is None:
-                glb_path = out_dir / f"{basename}.glb"
-                scene.export(glb_path.as_posix())
-                glb = str(glb_path)
-                written["glb"] = glb
-            write_blender_script(p, Path(glb).name, basename)
-            written["blender"] = str(p)
         else:
             raise ValueError(f"Unknown format: {fmt!r}. Choose from {FORMATS}.")
 
