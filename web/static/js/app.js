@@ -547,7 +547,7 @@ const viewer = new Viewer($('stage'));
 const usageEl = $('usage');
 setUsage(parseInt(usageEl.dataset.remaining, 10), parseInt(usageEl.dataset.limit, 10));
 
-$('extent').addEventListener('input', (e) => { $('extent-val').textContent = (+e.target.value).toFixed(1) + ' km'; });
+$('extent').addEventListener('input', () => { $('extent-val').textContent = $('extent').value + ' m'; });
 $('logout').addEventListener('click', async () => {
   await fetch('/api/logout', { method: 'POST', headers: { 'X-CSRF-Token': CSRF } }).catch(() => {});
   window.location.href = '/';
@@ -650,7 +650,7 @@ $('generate').addEventListener('click', async () => {
   btn.disabled = true;
   const label = $('gen-label').textContent;
   $('gen-label').innerHTML = '<span class="spinner"></span> Generating…';
-  showSpin('gen', $('use-real').checked ? 'fetching real-world data…' : 'building terrain…');
+  showSpin('gen', 'building terrain…');
 
   try {
     const res = await fetch('/api/generate', {
@@ -658,8 +658,7 @@ $('generate').addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
       body: JSON.stringify({
         prompt,
-        use_real: $('use-real').checked,
-        extent_km: parseFloat($('extent').value),
+        extent_m: parseFloat($('extent').value),
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -678,7 +677,7 @@ $('generate').addEventListener('click', async () => {
       renderResult(data, '', info);
       setUsage(data.remaining, data.limit);
       loadHistory();
-      toast('Map generated · ' + data.remaining + ' left', 'ok');
+      toast('World generated · ' + data.remaining + ' left', 'ok');
     }
   } catch (_) {
     $('err').textContent = 'Network error. Please try again.';
@@ -732,23 +731,18 @@ async function runOnWorker(data) {
   renderResult(wd, base, info);
   if (conf.limit != null) setUsage(conf.remaining, conf.limit);
   loadHistory();
-  toast('Map generated · ' + (conf.remaining != null ? conf.remaining : '?') + ' left', 'ok');
+  toast('World generated · ' + (conf.remaining != null ? conf.remaining : '?') + ' left', 'ok');
 }
 
 function renderResult(data, base, info) {
   const s = data.stats || {};
   const rows = [
-    ['Location', esc(data.location) + (data.used_real_data ? ' · real' : ' · procedural')],
-    ['Style', esc(data.style)],
-    ['Extent', info.km.toFixed(2) + ' km'],
+    ['World', esc(data.name || '—')],
+    ['Style', esc(data.style || '—')],
+    ['Extent', Math.round(data.extent_m || info.km * 1000) + ' m'],
     ['Relief', Math.round(info.relief) + ' m'],
   ];
-  if (s.building_count) {
-    let v = s.building_count.toLocaleString() + ' (OSM)';
-    if (s.buildings_extent_km) v += ' · ' + s.buildings_extent_km + ' km core';
-    rows.push(['Buildings', v]);
-  } else if (s.buildings_source === 'procedural') rows.push(['Buildings', 'procedural']);
-  if (s.trees) rows.push(['Forest', s.trees.toLocaleString() + ' trees']);
+  if (s.prop_intents) rows.push(['Props', s.prop_intents.toLocaleString() + ' intents']);
   rows.push(['Triangles', info.tris.toLocaleString()]);
 
   $('stats').innerHTML = rows.map(([k, v]) =>
@@ -778,8 +772,7 @@ async function loadHistory() {
       b.className = 'hitem';
       b.innerHTML =
         `<div class="h-prompt">${esc(it.prompt)}</div>` +
-        `<div class="h-meta"><span class="tag">${it.used_real ? 'real' : 'proc'}</span>` +
-        `<span>${esc(it.location || '—')} · ${when}</span></div>`;
+        `<div class="h-meta"><span>${esc(it.location || '—')} · ${when}</span></div>`;
       b.addEventListener('click', () => openSaved(it));
       el.appendChild(b);
     }
@@ -795,8 +788,8 @@ async function openSaved(it) {
     const info = await viewer.load(it.glb);
     syncSun(it);   // history rows have no lat/lon; falls back to the lat slider
     $('stats').innerHTML = [
-      ['Location', esc(it.location || '—') + (it.used_real ? ' · real' : ' · procedural')],
-      ['Extent', info.km.toFixed(2) + ' km'],
+      ['World', esc(it.location || '—')],
+      ['Extent', Math.round(info.km * 1000) + ' m'],
       ['Relief', Math.round(info.relief) + ' m'],
       ['Triangles', info.tris.toLocaleString()],
     ].map(([k, v]) => `<div class="stat"><span>${k}</span><b>${v}</b></div>`).join('');
