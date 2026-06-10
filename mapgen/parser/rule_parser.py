@@ -6,14 +6,8 @@ from __future__ import annotations
 import re
 
 from ..config import Config
-from ..scale import scale_to_extent_km
 from ..spec import (
-    Direction,
-    FeatureType,
-    GeoFeature,
-    MapStyle,
-    SceneSpec,
-    Size,
+    Direction, FeatureType, TerrainFeature, TerrainSpec, WorldStyle, WorldSpec, Size,
 )
 from .base import Parser
 
@@ -37,23 +31,17 @@ _FEATURE_WORDS = {
     FeatureType.sea: ["sea", "ocean"],
     FeatureType.coast: ["coast", "coastal", "shore", "beach", "seaside"],
     FeatureType.forest: ["forest", "woods", "woodland", "trees", "jungle"],
-    FeatureType.park: ["park", "garden"],
     FeatureType.desert: ["desert", "dunes", "sand"],
-    FeatureType.district: ["downtown", "district", "neighbourhood", "neighborhood", "suburb",
-                           "village", "villages", "town", "hamlet", "settlement"],
-    FeatureType.building: ["building", "skyscraper", "tower", "house", "houses"],
-    FeatureType.road: ["road", "roads", "street", "streets", "highway", "avenue"],
-    FeatureType.landmark: ["landmark", "monument", "cathedral", "castle", "bridge"],
 }
 
 _STYLE_WORDS = {
-    MapStyle.city: ["city", "urban", "downtown", "buildings", "skyline", "metropolis"],
-    MapStyle.topographic: ["topographic", "topo", "contour", "contours", "elevation lines"],
-    MapStyle.satellite: ["satellite", "aerial", "orthophoto"],
-    MapStyle.schematic: ["schematic", "diagram", "abstract", "clean", "minimalist diagram"],
-    MapStyle.fantasy: ["fantasy", "stylized", "epic", "game", "rpg"],
-    MapStyle.minimal: ["minimal", "grayscale", "greyscale", "wireframe"],
-    MapStyle.terrain: ["terrain", "relief", "natural", "landscape"],
+    WorldStyle.urban: ["city", "urban", "downtown", "buildings", "skyline", "town", "village"],
+    WorldStyle.alpine: ["alpine", "mountain", "mountains", "snow", "peak", "topographic"],
+    WorldStyle.desert: ["desert", "dunes", "sand", "arid"],
+    WorldStyle.schematic: ["schematic", "diagram", "abstract", "clean"],
+    WorldStyle.fantasy: ["fantasy", "stylized", "epic", "rpg", "magic"],
+    WorldStyle.minimal: ["minimal", "grayscale", "greyscale", "wireframe"],
+    WorldStyle.lowpoly_nature: ["terrain", "relief", "natural", "landscape", "forest", "nature"],
 }
 
 _SIZE_WORDS = {
@@ -61,159 +49,53 @@ _SIZE_WORDS = {
     Size.small: ["small", "little", "tiny", "low", "gentle"],
 }
 
-# Words that, if present, mark the scene as imaginary -> procedural generation.
-_FICTIONAL = (
-    "fantasy", "fictional", "fictitious", "imaginary", "made-up", "made up",
-    "mythical", "alien", "sci-fi", "procedural", "invented", "dream", "fairy-tale",
-)
-# Words that signal the user wants a faithful, real-world reconstruction.
-_REAL_INTENT = (
-    "1:1", "1 to 1", "real", "realistic", "actual", "true to life",
-    "true-to-life", "accurate", "real-world", "real world", "satellite",
-)
-
-# Capture the place phrase after an explicit "map/model/... of" (keeps "city, country").
-_STRONG_LOC = re.compile(
-    r"\b(?:3d\s+)?(?:map|model|render|rendering|scene|view|reconstruction)\s+of\s+(.+?)"
-    r"(?=$|[.;!?]|\bwith\b|\bthat\b|\btak(?:e|ing)\b|\bsurround\w*|\bfeatur\w*"
-    r"|\binclud\w*|\bshow\w*|\bhaving\b|\bconsider\w*|\baccount\w*)",
-    re.IGNORECASE,
-)
-# Fallback: a place after a locational preposition.
-_PREP_LOC = re.compile(
-    r"\b(?:in|near|around|at|over)\s+(.+?)"
-    r"(?=$|[.;!?]|\bwith\b|\band\b|\bthat\b|\btak(?:e|ing)\b|\bsurround\w*"
-    r"|\bfeatur\w*|\binclud\w*|\bshow\w*|\bhaving\b|\bconsider\w*|\baccount\w*)",
-    re.IGNORECASE,
-)
-
-# Capitalised tokens that are command verbs / filler, not place names.
-_CAP_STOP = {
-    "a", "an", "the", "take", "create", "make", "generate", "build", "render",
-    "show", "model", "map", "i", "please", "into", "account", "give", "produce",
-}
-# Common geographic nouns — a phrase made only of these isn't a real place name.
-_FEATURE_TOKENS = {w for words in _FEATURE_WORDS.values() for w in words}
-_FEATURE_TOKENS |= set(_DIRECTIONS) | {
-    "land", "area", "place", "region", "terrain", "surroundings", "stone", "wood",
-}
-
-
-def _titlecase(loc: str) -> str:
-    return " ".join(w[:1].upper() + w[1:] if w else w for w in loc.split())
-
-
-# Measurement / scale tokens that sometimes get swept into a captured place
-# phrase (e.g. "Kyoto 3km", "Tokyo 1:8") and would wreck geocoding precision.
-_MEASURE_RE = re.compile(r"\b\d+(?:\.\d+)?\s*k(?:m|ilomet\w*)\b|\b1\s*:\s*\d+\b", re.IGNORECASE)
-
-
-def _clean_loc(loc: str) -> str:
-    """Reduce a captured phrase to a clean place name for the geocoder: cut at
-    hard separators that never belong inside a place name (arrows, dashes,
-    pipes, colons, semicolons, newlines), drop extent/scale tokens, and keep at
-    most the first two comma groups (e.g. "City, Country")."""
-    loc = re.split(r"\s*(?:→|->|—|–|\||;|:|\n)\s*", loc, maxsplit=1)[0]
-    loc = _MEASURE_RE.sub(" ", loc)
-    loc = re.sub(r"\s+", " ", loc).strip(" ,.;")
-    parts = [p.strip() for p in loc.split(",") if p.strip()]
-    if len(parts) > 2:
-        parts = parts[:2]
-    return ", ".join(parts)
-
-
-def _is_placeish(loc: str) -> bool:
-    """True unless the phrase is built only from generic geographic nouns."""
-    tokens = re.findall(r"[a-z']+", loc.lower())
-    tokens = [t for t in tokens if t not in ("of", "the", "a", "an", "and")]
-    return any(t not in _FEATURE_TOKENS for t in tokens)
-
 
 class RuleParser(Parser):
-    def parse(self, prompt: str) -> SceneSpec:
+    def parse(self, prompt: str) -> WorldSpec:
         text = prompt.strip()
         low = text.lower()
-
-        location, is_real = self._location(text)
         style = self._style(low)
-        extent = self._extent(low, style)
-        features = self._features(low)
-
-        return SceneSpec(
-            location=location,
-            is_real_location=is_real,
-            map_style=style,
-            extent_km=extent,
-            features=features,
+        return WorldSpec(
+            name=self._name(text),
+            world_style=style,
+            extent_m=self._extent_m(low, style),
+            seed=self.config.seed,
+            terrain=TerrainSpec(features=self._features(low)),
+            props=[],
             notes="Parsed offline with the rule-based parser (heuristic).",
         )
 
-    # ------------------------------------------------------------------ #
-    def _location(self, text: str) -> tuple[str, bool]:
-        low = text.lower()
-        fictional = any(w in low for w in _FICTIONAL)
-        real_intent = any(w in low for w in _REAL_INTENT)
+    def _name(self, text: str) -> str:
+        # first 6 words, title-cased, as a friendly world name
+        words = re.findall(r"[A-Za-z][\w'-]*", text)[:6]
+        return " ".join(w.capitalize() for w in words) or "World"
 
-        # 1) explicit "<map/model/...> of <place>" or "<prep> <place>"
-        for rx in (_STRONG_LOC, _PREP_LOC):
-            m = rx.search(text)
-            if not m:
-                continue
-            loc = _clean_loc(m.group(1))
-            if loc and _is_placeish(loc):
-                is_real = real_intent or not fictional
-                return _titlecase(loc), is_real
-
-        # 2) fallback: longest run of capitalised words that isn't a command verb
-        caps = re.findall(r"\b([A-Z][\w'’-]+(?:[ ,]+[A-Z][\w'’-]+)*)", text)
-        caps = [c.strip(" ,") for c in caps if c.split()[0].lower() not in _CAP_STOP]
-        caps = [c for c in caps if _is_placeish(c)]
-        if caps:
-            best = max(caps, key=len)
-            return best, (real_intent or (not fictional and len(best) > 3))
-
-        return "an unnamed place", False
-
-    def _style(self, low: str) -> MapStyle:
+    def _style(self, low: str) -> WorldStyle:
         for style, words in _STYLE_WORDS.items():
             if any(w in low for w in words):
                 return style
-        return MapStyle.terrain
+        return WorldStyle.lowpoly_nature
 
-    def _extent(self, low: str, style: MapStyle) -> float:
-        # A "1:N" scale ratio (ground coverage) takes precedence over everything.
-        scale_extent = scale_to_extent_km(low)
-        if scale_extent is not None:
-            return scale_extent
-        m = re.search(r"(\d+(?:\.\d+)?)\s*(km|kilomet)", low)
+    def _extent_m(self, low: str, style: WorldStyle) -> float:
+        m = re.search(r"(\d+(?:\.\d+)?)\s*m(?:eter|etre)?s?\b", low)
         if m:
-            return max(0.1, min(200.0, float(m.group(1))))
-        if "range" in low or "region" in low:
-            return 40.0
-        if style == MapStyle.city or "city" in low:
-            # Compact by default so a fictional city reads as built-up rather
-            # than a handful of blocks lost in open ground; "dense"/"sparse"
-            # nudge the modelled coverage (and therefore the visible density).
-            if "dense" in low:
-                return 3.0
-            if "sparse" in low:
-                return 8.0
-            return 5.0
-        if "hamlet" in low or "village" in low:
-            return 2.5
-        if "town" in low:
-            return 4.0
-        return 2.0
+            return max(10.0, min(20000.0, float(m.group(1))))
+        km = re.search(r"(\d+(?:\.\d+)?)\s*km\b", low)
+        if km:
+            return max(10.0, min(20000.0, float(km.group(1)) * 1000.0))
+        if style == WorldStyle.urban:
+            return 600.0
+        return 300.0
 
-    def _features(self, low: str) -> list[GeoFeature]:
-        found: list[GeoFeature] = []
+    def _features(self, low: str) -> list[TerrainFeature]:
+        found: list[TerrainFeature] = []
         for ftype, words in _FEATURE_WORDS.items():
             for w in words:
                 for m in re.finditer(r"\b" + re.escape(w) + r"\b", low):
                     anchor = (m.start() + m.end()) // 2
                     window = low[max(0, m.start() - 30): m.end() + 30]
                     found.append(
-                        GeoFeature(
+                        TerrainFeature(
                             type=ftype,
                             direction=self._direction_near(low, anchor),
                             relative_size=self._size(window),

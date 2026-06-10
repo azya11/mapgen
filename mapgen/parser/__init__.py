@@ -1,9 +1,9 @@
-"""Prompt -> SceneSpec parsing. Pluggable backends behind one interface."""
+"""Prompt -> WorldSpec parsing. Pluggable backends behind one interface."""
 
 from __future__ import annotations
 
 from ..config import Config
-from ..spec import SceneSpec
+from ..spec import WorldSpec
 from .base import Parser
 from .claude_parser import ClaudeParser
 from .rule_parser import RuleParser
@@ -27,4 +27,4 @@ def make_parser(config: Config) -> Parser:
     return RuleParser(config)
 
 
-__all__ = ["Parser", "ClaudeParser", "RuleParser", "make_parser", "SceneSpec"]
+__all__ = ["Parser", "ClaudeParser", "RuleParser", "make_parser", "WorldSpec"]

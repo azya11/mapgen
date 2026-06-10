@@ -41,3 +41,28 @@ def test_worldspec_extent_bounds():
 
     with pytest.raises(Exception):
         WorldSpec(name="x", extent_m=0.0)
+
+
+def test_claude_tool_schema_matches_worldspec_and_registry():
+    from mapgen.parser.claude_parser import TOOL
+    from mapgen.props import all_keys
+    from mapgen.spec import WorldSpec, WorldStyle
+
+    props = TOOL["input_schema"]["properties"]
+    # every world_style enum value is a valid WorldStyle
+    for v in props["world_style"]["enum"]:
+        WorldStyle(v)
+    # the prop generator enum is exactly the live registry keys
+    gen_enum = props["props"]["items"]["properties"]["generator"]["enum"]
+    assert set(gen_enum) == set(all_keys())
+
+    # a representative tool payload validates against WorldSpec
+    sample = {
+        "name": "Riverside",
+        "world_style": "lowpoly_nature",
+        "extent_m": 400.0,
+        "terrain": {"features": [{"type": "river", "direction": "east"}]},
+        "props": [{"generator": "tree.conifer", "count": 30, "region": "north", "density": "dense"}],
+    }
+    w = WorldSpec.model_validate(sample)
+    assert w.terrain.has_water and w.props[0].generator == "tree.conifer"
