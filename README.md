@@ -1,4 +1,4 @@
-# mapgen — prompt → 3D map pipeline
+# mapgen — prompt → procedural 3D game world
 
 [![CI](https://github.com/azya11/mapgen/actions/workflows/ci.yml/badge.svg)](https://github.com/azya11/mapgen/actions/workflows/ci.yml)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary%20%C2%B7%20All%20rights%20reserved-red.svg)](LICENSE)
@@ -6,23 +6,22 @@
 > © 2026 Aziz. All rights reserved. This source is public for viewing only —
 > no use, copying, modification, or distribution is permitted without written consent.
 
-An AI pipeline that turns a natural-language prompt describing a **location, its
-surroundings, and the kind of map** you want into **3D models and files ready for
-rendering** (glTF/GLB, OBJ+MTL, STL, and a runnable Blender script).
+An AI pipeline that turns a natural-language prompt into a **low-poly procedural
+3D game world** — terrain, water, and prop layout — exported to **glTF/GLB,
+OBJ+MTL, and STL**, ready for rendering or import into any game engine.
 
 ```
-prompt ─▶ [1 Parse]  Claude tool-use ─▶ validated SceneSpec (JSON)
-       ─▶ [2 Resolve] geocode → real? OSM buildings + elevation : procedural
-       ─▶ [3 Build]   terrain mesh + water + buildings → trimesh.Scene
-       ─▶ [4 Export]  GLB · OBJ+MTL · STL · Blender .py
+prompt ─▶ [1 Parse]    Claude tool-use / RuleParser ─▶ validated WorldSpec (JSON)
+       ─▶ [2 Build]    procedural heightfield + water plane ─▶ trimesh.Scene
+       ─▶ [3 Export]   GLB · OBJ+MTL · STL
+
+  Full M0–M4 design (5-stage):
+  Parse → Plan → Build → Assemble → Export
+         └─ prop placement ─────────────┘  ← M2 (not yet in scene)
 ```
 
-It ships both as a **CLI** and as a **secure web app** with accounts and a free
+It ships as both a **CLI** and a **secure web app** with accounts and a free
 2-generation quota (see [Web app](#web-app)).
-
-It is **hybrid**: recognised real places are built from real OpenStreetMap
-building footprints and Open-Meteo elevation data; fictional or unrecognised
-places are generated procedurally from the parsed description.
 
 ## Install
 
@@ -48,94 +47,85 @@ $env:ANTHROPIC_API_KEY = "sk-ant-..."
 ## Usage
 
 ```powershell
-# Real location — pulls real OSM buildings + elevation
-python cli.py "downtown San Francisco with steep hills, city map"
+# Fantasy terrain with a lake — Claude parser if key is set, rule parser otherwise
+python cli.py "a fantasy valley with a lake, forest to the west" --extent 400
 
-# Fictional — fully procedural
-python cli.py "a fantasy coastal town with towering mountains to the north and a forest to the west"
+# Alpine valley, GLB + STL only, custom terrain resolution
+python cli.py "alpine valley with a river" --formats glb stl --resolution 80
 
-# Pick formats and force offline (no network, no API key)
-python cli.py "a desert canyon with a river" --offline --formats glb stl
+# Force the offline rule parser and print the WorldSpec JSON
+python cli.py "desert canyon" --parser rule --json
 
-# Inspect the structured spec Claude/the parser produced
-python cli.py "Kyoto temple district, schematic map" --json
+# Fix the RNG seed for reproducible output
+python cli.py "snowy mountain pass" --seed 42 --out renders
 ```
 
-Outputs land in `output/` (override with `--out`). Each run writes the requested
-formats, e.g. `san-francisco.glb`, `.obj`, `.stl`, and `san-francisco_blender.py`.
+Outputs land in `output/` (override with `--out`). Each run writes the
+requested formats, e.g. `fantasy-valley.glb`, `.obj`, `.stl`.
 
 ### CLI options
 
 | flag | meaning |
 |------|---------|
 | `--out DIR` | output directory (default `output`) |
-| `--formats ...` | any of `glb obj stl blender` (default: all) |
-| `--name NAME` | output basename (default: derived from location) |
+| `--formats ...` | any of `glb obj stl` (default: all three) |
+| `--name NAME` | output basename (default: derived from world name) |
 | `--parser auto\|claude\|rule` | parser backend (default `auto`: Claude if key present, else rule) |
 | `--model ID` | override Claude model (default `claude-sonnet-4-6`) |
-| `--offline` | disable all network → rule parser + procedural geometry |
 | `--resolution N` | terrain grid cells per side (default 96) |
 | `--seed N` | procedural RNG seed |
-| `--json` | also print the SceneSpec JSON |
-| `--location "PLACE"` | **force** a real place to geocode (implies real-world data) |
-| `--real` / `--procedural` | force real-world data / force procedural, overriding the prompt |
-| `--extent KM` | override the modeled area side length in km |
-
-### Forcing real-world data
-
-The pipeline uses real OpenStreetMap buildings + elevation whenever the prompt
-names a real, geocodable place. The offline **rule parser** recognises phrasings
-like `map of <place>`, `in/near <place>`, and `city, country` (case-insensitive),
-and treats `1:1`, `realistic`, `satellite`, etc. as real-world intent. If a prompt
-is ambiguous, force it explicitly:
-
-```powershell
-python cli.py "1:1 map of uralsk, kazakhstan with terrain and building heights" --location "Uralsk, Kazakhstan" --extent 8
-```
-
-For the most reliable place/feature extraction, set `ANTHROPIC_API_KEY` to use the
-Claude parser. Building heights come from OSM `height` / `building:levels` tags;
-terrain comes from real elevation data.
+| `--json` | also print the WorldSpec JSON |
+| `--extent METERS` | override the world side length in meters |
 
 ## How each stage works
 
 1. **Parse** (`mapgen/parser`). The `ClaudeParser` uses Anthropic **tool-use** to
-   force the model to emit a structured `SceneSpec` (location, real-vs-fictional,
-   map style, extent in km, and a list of directional features). The tool schema
-   is kept in lock-step with the Pydantic model, and the system prompt is
-   prompt-cached. An offline `RuleParser` provides a keyword/regex fallback.
-2. **Resolve** (`mapgen/geo`). Real locations are geocoded (Nominatim), then a
-   square bbox of the requested extent is used to fetch building footprints +
-   roads (Overpass, with mirror fallback) and an elevation grid (Open-Meteo, with
-   rate-limit backoff). Any failure degrades gracefully to procedural.
-3. **Build** (`mapgen/generate`). A heightfield (real elevation or fBm noise
-   shaped by the features and their compass directions) is triangulated; water
-   planes, real OSM building extrusions, or procedural city blocks are added;
-   the mesh is colour-graded by map style.
-4. **Export** (`mapgen/export`). `trimesh` writes GLB / OBJ / STL; a standalone
-   Blender script imports the GLB, frames a camera, adds a sun, and renders with
-   Cycles.
+   force the model to emit a structured `WorldSpec` (world name, style, extent in
+   meters, a list of terrain features, and prop intents). The tool schema is kept
+   in lock-step with the Pydantic model, and the system prompt is prompt-cached.
+   An offline `RuleParser` provides a keyword/regex fallback when no API key is
+   set (or when `--parser rule` is given explicitly).
+
+2. **Build** (`mapgen/generate`). A heightfield is constructed from fBm noise
+   shaped by the terrain features and their compass directions, then triangulated.
+   Water planes are added where the spec calls for lakes, rivers, seas, or coast.
+   Colour-grading follows the `WorldStyle` (lowpoly_nature, fantasy, alpine,
+   desert, etc.).
+
+3. **Export** (`mapgen/export`). `trimesh` writes GLB / OBJ+MTL / STL. The GLB
+   and OBJ include per-vertex normals so downstream tools shade correctly.
+
+### Prop registry (AI-selectable; placement ships in M2)
+
+`mapgen/props/` contains a decorator-based registry of procedural prop
+generators. Available generators and their poly budgets:
+
+| key | description |
+|-----|-------------|
+| `rock` | jittered icosahedron, ≤ 40 tris |
+| `tree.conifer` | low-poly conifer (cone stack), ≤ 80 tris |
+| `tree.broadleaf` | low-poly broadleaf (sphere-ish canopy), ≤ 80 tris |
+| `barrel` | low-poly barrel mesh |
+| `house.cottage` | simple cottage form |
+
+The Claude parser's tool schema enumerates only keys that exist in the live
+registry, so the model can **request** props by name. Props are testable in
+isolation today (`mapgen/props/`). **Scattering them into the 3D scene is a
+Milestone 2 deliverable** (see Roadmap below).
 
 ## Output formats
 
 | format | notes |
 |--------|-------|
-| **GLB** | self-contained, with colours; best for web/three.js, game engines, Windows 3D Viewer |
-| **OBJ** | colours stored **per-vertex inline** (the correct representation for a colour-graded heightfield); a sibling `.mtl` is written when single-material meshes are present |
-| **STL** | geometry only, single merged mesh — for 3D printing |
-| **Blender** | `*_blender.py`; run `blender --background --python <file>` to render a PNG |
-
-## Render the Blender output
-
-```powershell
-blender --background --python output\san-francisco_blender.py
-# writes output\san-francisco_render.png
-```
+| **GLB** | self-contained binary glTF with vertex colours and normals; best for web/three.js, game engines, Windows 3D Viewer |
+| **OBJ** | colours stored **per-vertex inline** (correct for a colour-graded heightfield); a sibling `.mtl` is written for any single-material meshes |
+| **STL** | geometry only, single merged mesh — for 3D printing or quick mesh inspection |
 
 ## Web app
 
-A hardened FastAPI web app that lets registered users generate maps in the
-browser, with a free **2-generations-per-account** quota (no payment system).
+A hardened FastAPI web app that lets registered users generate procedural worlds
+in the browser, with a free **2-generations-per-account** quota (no payment
+system). Extent is specified in **meters**.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-mapgen.txt
@@ -146,7 +136,7 @@ To **host it for free**, the app can split into a Vercel frontend (free) + a
 free always-on generation worker — see [DEPLOY.md](DEPLOY.md).
 
 Open the URL, create an account, and generate from the in-browser studio with a
-live three.js viewer (sky, sun shadows, reflections) and GLB/OBJ/STL downloads.
+live three.js viewer and GLB/OBJ/STL downloads.
 
 **Frontend** — aurora-glass design system (Space Grotesk / Inter / JetBrains
 Mono), animated landing page, auth screens, and a generator with a real-time 3D
@@ -172,17 +162,42 @@ viewer and usage meter.
 `WEB_TRUST_PROXY=1`. Set `ANTHROPIC_API_KEY` to use the Claude parser. The free
 quota and limits are configurable via `WEB_*` env vars (see `web/config.py`).
 
+## Environment variables
+
+| variable | purpose |
+|----------|---------|
+| `ANTHROPIC_API_KEY` | enables the Claude parser (optional; rule parser used otherwise) |
+| `MAPGEN_MODEL` | override the Claude model id |
+| `MAPGEN_PARSER` | default parser backend (`auto`, `claude`, or `rule`) |
+| `MAPGEN_RESOLUTION` | default terrain grid resolution |
+| `MAPGEN_SEED` | default procedural seed |
+
 ## Tests
 
 ```powershell
-.\.venv\Scripts\python.exe tests\test_pipeline.py
+.\.venv\Scripts\python.exe -m pytest tests -q
 ```
+
+18 tests covering the pipeline, WorldSpec validation, and the prop generators.
+
+## Roadmap (M2 and beyond)
+
+The 5-stage pipeline design (`Parse → Plan → Build → Assemble → Export`) is
+implemented through **Build** today. Planned milestones:
+
+- **M2** — prop placement + GPU instancing: scatter registered prop generators
+  into the scene mesh according to the `PropIntent` list in the `WorldSpec`;
+  GPU-instanced rendering path for the web viewer.
+- **M3** — glTF Y-up / meters export conventions; UV unwrap; per-material
+  textures; LOD levels; collision mesh export.
+- **M4** — streaming generation; large-extent chunking; web worker concurrency
+  improvements.
 
 ## Notes & limits
 
-- The **rule parser** is a best-effort offline heuristic; for accurate location
-  and feature extraction (e.g. "Chamonix" vs "the French Alps") use the **Claude
-  parser** by setting `ANTHROPIC_API_KEY`.
-- Real-data APIs are free and keyless but rate-limited; large city extents pull
-  many buildings (San Francisco at 12 km ≈ 85k footprints) and produce large
-  files — lower `--resolution` or extent for quick iteration.
+- The **rule parser** is a best-effort offline heuristic; for accurate feature
+  extraction use the **Claude parser** by setting `ANTHROPIC_API_KEY`.
+- Lower `--resolution` or `--extent` for fast iteration; the default 96-cell
+  grid at 200 m produces ~18 k triangles.
+- The real-world data pipeline (OSM buildings, elevation, geocoding) has been
+  archived to `legacy/` — this tool is procedural-only as of M0.
