@@ -24,6 +24,31 @@ It is **hybrid**: recognised real places are built from real OpenStreetMap
 building footprints and Open-Meteo elevation data; fictional or unrecognised
 places are generated procedurally from the parsed description.
 
+## Screenshots
+
+<table>
+   <tr>
+      <td align="center"><img src="./01-empty-app-shell.png" alt="Empty app shell" width="100%" /><br/>Empty app shell</td>
+      <td align="center"><img src="./02-fetching-real-world-data.png" alt="Fetching real-world data" width="100%" /><br/>Fetching data</td>
+      <td align="center"><img src="./03-loading-model.png" alt="Loading model" width="100%" /><br/>Loading model</td>
+   </tr>
+   <tr>
+      <td align="center"><img src="./04-generated-terrain-overview.png" alt="Generated terrain overview" width="100%" /><br/>Terrain overview</td>
+      <td align="center"><img src="./05-generated-wireframe-overview.png" alt="Generated wireframe overview" width="100%" /><br/>Wireframe overview</td>
+      <td align="center"><img src="./06-generated-colorized-overview.png" alt="Generated colorized overview" width="100%" /><br/>Colorized overview</td>
+   </tr>
+   <tr>
+      <td align="center"><img src="./07-red-style-overview.png" alt="Red style overview" width="100%" /><br/>Alternate style</td>
+      <td align="center"><img src="./08-measurement-view.png" alt="Measurement view" width="100%" /><br/>Measurement view</td>
+      <td align="center"><img src="./09-close-up-inspection.png" alt="Close-up inspection" width="100%" /><br/>Close-up inspection</td>
+   </tr>
+   <tr>
+      <td align="center"><img src="./10-guided-line-view.png" alt="Guided line view" width="100%" /><br/>Guided line view</td>
+      <td align="center"><img src="./11-top-down-wireframe.png" alt="Top-down wireframe" width="100%" /><br/>Top-down wireframe</td>
+      <td align="center"><img src="./12-google-maps-reference.png" alt="Google Maps reference" width="100%" /><br/>Reference capture</td>
+   </tr>
+</table>
+
 ## Live Demo And Walkthrough
 
 Production link: https://mapgen-zeta.vercel.app/
