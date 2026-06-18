@@ -24,6 +24,38 @@ It is **hybrid**: recognised real places are built from real OpenStreetMap
 building footprints and Open-Meteo elevation data; fictional or unrecognised
 places are generated procedurally from the parsed description.
 
+## Live Demo And Walkthrough
+
+Production link: https://mapgen-zeta.vercel.app/
+
+The screenshots below show one real generation run from the live app, from the
+empty studio state through the generated map views and the Google Maps
+reference capture used for comparison.
+
+1. [Empty app shell](01-empty-app-shell.png) — the studio before a run starts.
+2. [Fetching real-world data](02-fetching-real-world-data.png) — the app is
+pulling geocode, OSM, and elevation data.
+3. [Loading model](03-loading-model.png) — the 3D model is being prepared for
+display.
+4. [Generated terrain overview](04-generated-terrain-overview.png) — first
+oblique view of the finished map.
+5. [Generated wireframe overview](05-generated-wireframe-overview.png) — a mesh
+inspection view that makes the geometry easier to read.
+6. [Generated colorized overview](06-generated-colorized-overview.png) — the
+same map with the styled surface shading enabled.
+7. [Red style overview](07-red-style-overview.png) — an alternate styled pass
+showing the same area with a different color treatment.
+8. [Measurement view](08-measurement-view.png) — a guided inspection view that
+highlights a measured path across the map.
+9. [Close-up inspection](09-close-up-inspection.png) — a tighter look at local
+terrain and building detail.
+10. [Guided line view](10-guided-line-view.png) — another measurement-oriented
+angle from the run.
+11. [Top-down wireframe](11-top-down-wireframe.png) — an overhead geometry
+check.
+12. [Google Maps reference](12-google-maps-reference.png) — the source
+reference capture used alongside the generated result.
+
 ## Install
 
 ```powershell
